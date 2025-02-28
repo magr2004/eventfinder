@@ -136,14 +136,19 @@ function searchEvents() {
         .catch(error => {
             console.error('Main API endpoint failed:', error);
             
-            // If the main endpoint fails with a NOT_FOUND error, try the alternative endpoint
-            if (error.message.includes('API endpoint not found') || error.message.includes('NOT_FOUND')) {
-                console.log('Trying alternative endpoint...');
-                return makeApiRequest('/server.js/api/events', location, radius, category, dateFilter, apiChoice, requestId);
-            }
-            
-            // Otherwise, rethrow the error
-            throw error;
+            // If the main endpoint fails, try the alternative endpoints in sequence
+            console.log('Trying alternative endpoint 1...');
+            return makeApiRequest('api/events', location, radius, category, dateFilter, apiChoice, requestId)
+                .catch(error => {
+                    console.error('Alternative endpoint 1 failed:', error);
+                    console.log('Trying alternative endpoint 2...');
+                    return makeApiRequest('/server.js/api/events', location, radius, category, dateFilter, apiChoice, requestId);
+                })
+                .catch(error => {
+                    console.error('Alternative endpoint 2 failed:', error);
+                    console.log('Trying alternative endpoint 3...');
+                    return makeApiRequest('/api/events/', location, radius, category, dateFilter, apiChoice, requestId);
+                });
         })
         .catch(error => {
             // Check if this is still the latest request
@@ -158,6 +163,10 @@ function searchEvents() {
             // Show error message
             showError(error.message || 'Failed to fetch events. Please try again later.');
             console.error('Error:', error);
+            
+            // Create fallback events even when all API attempts fail
+            allEvents = createFallbackEvents();
+            filterEvents();
         });
 }
 
@@ -805,4 +814,44 @@ document.querySelectorAll('.select-wrapper select').forEach(select => {
         (select.id === 'api-select' && select.value !== 'perplexity')) {
         select.closest('.select-wrapper').classList.add('has-value');
     }
-}); 
+});
+
+// Function to check API endpoint availability
+function checkApiEndpoints() {
+    console.log('Checking API endpoint availability...');
+    
+    // Array of endpoints to check
+    const endpoints = [
+        '/api/health',
+        '/api/debug',
+        'api/health',
+        'api/debug',
+        '/server.js/api/health',
+        '/server.js/api/debug'
+    ];
+    
+    // Check each endpoint
+    endpoints.forEach(endpoint => {
+        fetch(endpoint)
+            .then(response => {
+                console.log(`Endpoint ${endpoint}: ${response.status} ${response.ok ? 'OK' : 'Failed'}`);
+                return response.text();
+            })
+            .then(text => {
+                try {
+                    // Try to parse as JSON
+                    const data = JSON.parse(text);
+                    console.log(`Endpoint ${endpoint} response:`, data);
+                } catch (e) {
+                    // Log as text if not JSON
+                    console.log(`Endpoint ${endpoint} response (text):`, text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+                }
+            })
+            .catch(error => {
+                console.error(`Endpoint ${endpoint} error:`, error);
+            });
+    });
+}
+
+// Run the endpoint check on page load
+window.addEventListener('load', checkApiEndpoints); 

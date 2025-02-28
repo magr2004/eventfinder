@@ -131,8 +131,72 @@ app.get('/api/debug', (req, res) => {
     });
 });
 
+// Add a route info endpoint
+app.get('/api/routes', (req, res) => {
+    // Get all registered routes
+    const routes = [];
+    
+    app._router.stack.forEach(middleware => {
+        if (middleware.route) {
+            // Routes registered directly on the app
+            routes.push({
+                path: middleware.route.path,
+                methods: Object.keys(middleware.route.methods).filter(m => middleware.route.methods[m])
+            });
+        } else if (middleware.name === 'router') {
+            // Router middleware
+            middleware.handle.stack.forEach(handler => {
+                if (handler.route) {
+                    routes.push({
+                        path: handler.route.path,
+                        methods: Object.keys(handler.route.methods).filter(m => handler.route.methods[m])
+                    });
+                }
+            });
+        }
+    });
+    
+    res.status(200).json({
+        routes,
+        baseUrl: req.baseUrl,
+        originalUrl: req.originalUrl,
+        hostname: req.hostname
+    });
+});
+
 // API proxy endpoint with validation
 app.post('/api/events', validateEventRequest, async (req, res) => {
+    try {
+        const { location, radius, category, apiChoice, eventDate } = req.body;
+        
+        // Choose API based on user selection
+        if (apiChoice === 'gemini') {
+            // Check if Gemini API key exists before proceeding
+            if (!process.env.GEMINI_API_KEY) {
+                return res.status(500).json({ 
+                    error: 'Gemini API key is missing. Please contact the administrator.' 
+                });
+            }
+            await handleGeminiRequest(req, res);
+        } else {
+            // Check if Perplexity API key exists before proceeding
+            if (!process.env.PERPLEXITY_API_KEY) {
+                return res.status(500).json({ 
+                    error: 'Perplexity API key is missing. Please contact the administrator.' 
+                });
+            }
+            // Default to Perplexity
+            await handlePerplexityRequest(req, res);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        // Don't expose detailed error information to client
+        res.status(500).json({ error: 'An error occurred while processing your request.' });
+    }
+});
+
+// Add alternative API endpoint paths for compatibility
+app.post('/server.js/api/events', validateEventRequest, async (req, res) => {
     try {
         const { location, radius, category, apiChoice, eventDate } = req.body;
         
