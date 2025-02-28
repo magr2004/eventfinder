@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Find local events happening near you. Discover concerts, festivals, sports, and more with our easy-to-use event finder.">
+    <meta name="keywords" content="events, local events, concerts, festivals, sports events, event finder">
+    <meta name="author" content="Event Finder">
+    <meta name="theme-color" content="#0a1f44">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' https://images.unsplash.com; connect-src 'self' https://api.perplexity.ai https://generativelanguage.googleapis.com;">
+    <title>Local Event Finder | Discover Events Near You</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Local Event Finder</h1>
+            <p>Discover exciting events and activities happening near you</p>
+        </header>
+        
+        <div class="search-container">
+            <div class="search-form">
+                <div class="form-group">
+                    <input type="text" id="location-input" placeholder="Enter location (city or zip code)">
+                    <button id="search-btn"><i class="fas fa-search"></i> Find Events</button>
+                </div>
+                
+                <div class="search-options">
+                    <div class="option-group">
+                        <div class="select-wrapper">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <select id="radius-select">
+                                <option value="5">5 miles</option>
+                                <option value="10" selected>10 miles</option>
+                                <option value="25">25 miles</option>
+                                <option value="50">50 miles</option>
+                                <option value="100">100 miles</option>
+                            </select>
+                        </div>
+                        
+                        <div class="select-wrapper">
+                            <i class="fas fa-tag"></i>
+                            <select id="category-filter">
+                                <option value="all">All Categories</option>
+                                <option value="music">Music</option>
+                                <option value="sports">Sports</option>
+                                <option value="arts">Arts & Culture</option>
+                                <option value="food">Food & Drink</option>
+                                <option value="outdoor">Outdoor</option>
+                                <option value="family">Family & Kids</option>
+                                <option value="comedy">Comedy</option>
+                                <option value="theater">Theater & Shows</option>
+                                <option value="festivals">Festivals</option>
+                                <option value="nightlife">Nightlife</option>
+                                <option value="business">Business & Networking</option>
+                                <option value="education">Education & Learning</option>
+                                <option value="charity">Charity & Causes</option>
+                                <option value="health">Health & Wellness</option>
+                                <option value="tech">Technology</option>
+                            </select>
+                        </div>
+                        
+                        <div class="select-wrapper">
+                            <i class="far fa-calendar-alt"></i>
+                            <select id="date-filter">
+                                <option value="all">All Dates</option>
+                                <option value="today">Today</option>
+                                <option value="tomorrow">Tomorrow</option>
+                                <option value="this weekend">This Weekend</option>
+                                <option value="next week">Next Week</option>
+                                <option value="this month">This Month</option>
+                            </select>
+                        </div>
+                        
+                        <div class="select-wrapper">
+                            <i class="fas fa-sort"></i>
+                            <select id="sort-order" title="Sort events by date">
+                                <option value="recent">Soonest</option>
+                                <option value="future">Latest</option>
+                            </select>
+                        </div>
+                        
+                        <div class="select-wrapper">
+                            <i class="fas fa-robot"></i>
+                            <select id="api-select">
+                                <option value="perplexity">Perplexity AI</option>
+                                <option value="gemini">Google Gemini</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Searching for events in your area...</p>
+        </div>
+        
+        <div id="events-container">
+            <!-- Events will be displayed here -->
+        </div>
+        
+        <div id="error-message" class="hidden">
+            <p><i class="fas fa-exclamation-circle"></i> Sorry, we couldn't find any events. Please try a different location or filters.</p>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html> 
