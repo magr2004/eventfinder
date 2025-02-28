@@ -8,40 +8,23 @@ const loadingElement = document.getElementById('loading');
 const errorMessage = document.getElementById('error-message');
 const apiSelect = document.getElementById('api-select');
 const radiusSelect = document.getElementById('radius-select');
-const sortOrderSelect = document.getElementById('sort-order');
+const sortOrder = document.getElementById('sort-order');
 
 // Event listeners
 searchBtn.addEventListener('click', searchEvents);
 categoryFilter.addEventListener('change', filterEvents);
 dateFilter.addEventListener('change', filterEvents);
 radiusSelect.addEventListener('change', filterEvents);
-sortOrderSelect.addEventListener('change', filterEvents);
-
-// Add enter key support for search
-locationInput.addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        searchEvents();
-    }
-});
-
-// Add visual feedback on form elements
-locationInput.addEventListener('focus', function() {
-    this.parentElement.classList.add('focused');
-});
-
-locationInput.addEventListener('blur', function() {
-    this.parentElement.classList.remove('focused');
-});
+sortOrder.addEventListener('change', filterEvents);
 
 // Store all events to use for filtering
 let allEvents = [];
-// Add a request ID to track the latest request
-let currentRequestId = 0;
 
 // Client-side input validation
 function validateInputs() {
     const location = locationInput.value.trim();
     const radius = parseInt(radiusSelect.value);
+    const sort = sortOrder.value;
     
     // Validate location
     if (!location) {
@@ -60,23 +43,20 @@ function validateInputs() {
         return false;
     }
     
+    // Validate sort order
+    if (sort !== 'recent' && sort !== 'future') {
+        showError('Invalid sort order');
+        return false;
+    }
+    
     return true;
 }
 
-// Show error message with animation
+// Show error message
 function showError(message) {
     errorMessage.innerHTML = `<p><i class="fas fa-exclamation-circle"></i> ${escapeHTML(message)}</p>`;
     errorMessage.classList.remove('hidden');
-    errorMessage.style.animation = 'fadeIn 0.3s ease-in-out';
     loadingElement.classList.add('hidden');
-    
-    // Scroll to error message
-    errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// Hide error message
-function hideError() {
-    errorMessage.classList.add('hidden');
 }
 
 // Escape HTML to prevent XSS
@@ -89,353 +69,192 @@ function escapeHTML(str) {
         .replace(/'/g, '&#039;');
 }
 
-// Function to validate URLs
-function isValidURL(url) {
-    try {
-        // First, ensure the URL has a protocol
-        let urlToValidate = url;
-        if (!/^https?:\/\//i.test(urlToValidate)) {
-            urlToValidate = 'https://' + urlToValidate;
-        }
-        
-        const urlObj = new URL(urlToValidate);
-        
-        // Only allow http and https protocols
-        return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
-    } catch (e) {
-        return false;
-    }
-}
-
-// Function to search events
-function searchEvents() {
+// Function to search for events using our backend API
+async function searchEvents() {
+    // Validate inputs before proceeding
     if (!validateInputs()) {
         return;
     }
     
-    // Hide any previous error messages
-    hideError();
-    
-    // Show loading indicator with animation
-    loadingElement.style.animation = 'fadeIn 0.3s ease-in-out';
+    const location = locationInput.value.trim();
+    const radius = parseInt(radiusSelect.value);
+    const category = categoryFilter.value;
+    const apiChoice = apiSelect.value;
+    const eventDate = dateFilter.value;
+
+    // Show loading spinner
     loadingElement.classList.remove('hidden');
     eventsContainer.innerHTML = '';
+    errorMessage.classList.add('hidden');
     
-    // Get input values
-    const location = locationInput.value.trim();
-    const radius = radiusSelect.value;
-    const category = categoryFilter.value;
-    const dateFilter = document.getElementById('date-filter').value;
-    const apiChoice = apiSelect.value;
-    
-    // Increment request ID
-    const requestId = ++currentRequestId;
-    
-    // Try the main endpoint first
-    makeApiRequest('/api/events', location, radius, category, dateFilter, apiChoice, requestId)
-        .catch(error => {
-            console.error('Main API endpoint failed:', error);
-            
-            // If the main endpoint fails, try the alternative endpoints in sequence
-            console.log('Trying alternative endpoint 1...');
-            return makeApiRequest('api/events', location, radius, category, dateFilter, apiChoice, requestId)
-                .catch(error => {
-                    console.error('Alternative endpoint 1 failed:', error);
-                    console.log('Trying alternative endpoint 2...');
-                    return makeApiRequest('/server.js/api/events', location, radius, category, dateFilter, apiChoice, requestId);
-                })
-                .catch(error => {
-                    console.error('Alternative endpoint 2 failed:', error);
-                    console.log('Trying alternative endpoint 3...');
-                    return makeApiRequest('/api/events/', location, radius, category, dateFilter, apiChoice, requestId);
-                });
-        })
-        .catch(error => {
-            // Check if this is still the latest request
-            if (requestId !== currentRequestId) {
-                console.log('Ignoring outdated request error');
-                return;
-            }
-            
-            // Hide loading indicator
-            loadingElement.classList.add('hidden');
-            
-            // Show error message
-            showError(error.message || 'Failed to fetch events. Please try again later.');
-            console.error('Error:', error);
-            
-            // Create fallback events even when all API attempts fail
-            allEvents = createFallbackEvents();
-            filterEvents();
+    try {
+        // Add a timeout to the fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+        
+        const response = await fetch('/api/events', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                location,
+                radius,
+                category,
+                apiChoice,
+                eventDate
+            }),
+            signal: controller.signal
         });
-}
-
-// Function to make API request
-function makeApiRequest(endpoint, location, radius, category, dateFilter, apiChoice, requestId) {
-    return fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            location,
-            radius,
-            category,
-            eventDate: dateFilter,
-            apiChoice
-        })
-    })
-    .then(response => {
+        
+        clearTimeout(timeoutId); // Clear the timeout if the request completes
+        
         if (!response.ok) {
-            return response.text().then(text => {
-                // Try to parse as JSON first
-                try {
-                    const errorData = JSON.parse(text);
-                    throw new Error(errorData.error || errorData.message || 'Failed to fetch events');
-                } catch (e) {
-                    // If not valid JSON, check if it's HTML (common for server errors)
-                    if (text.includes('<!DOCTYPE html>') || text.includes('<html>')) {
-                        console.error('Server returned HTML instead of JSON:', text.substring(0, 200));
-                        if (text.includes('NOT_FOUND')) {
-                            throw new Error('API endpoint not found. This is likely a server configuration issue.');
-                        }
-                        throw new Error('Server error occurred. Please try again later.');
-                    }
-                    // Otherwise just return the text
-                    throw new Error(text || 'Failed to fetch events');
-                }
-            });
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to fetch events');
         }
         
-        // Check content type to ensure we're getting JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            throw new Error(`Expected JSON response but got ${contentType}`);
+        const data = await response.json();
+        
+        // Validate the response structure
+        if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+            throw new Error('Invalid response format from server');
         }
         
-        return response.json();
-    })
-    .then(data => {
-        // Check if this is still the latest request
-        if (requestId !== currentRequestId) {
-            console.log('Ignoring outdated request');
-            return;
-        }
+        const eventsText = data.choices[0].message.content;
         
-        // Hide loading indicator
-        loadingElement.classList.add('hidden');
+        // Parse the events from the JSON response
+        allEvents = parseEventsFromJSON(eventsText);
         
-        // Extract events from the API response
-        let eventsContent;
-        
-        // Check if we have a valid response structure
-        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-            // This is the structure for both Perplexity and Gemini responses
-            eventsContent = data.choices[0].message.content;
-            console.log("Extracted events content from API response");
+        if (allEvents.length === 0) {
+            showError('No events found. Please try a different location or filters.');
         } else {
-            console.error("Unexpected API response structure:", data);
-            throw new Error("Invalid response format from API");
+            displayEvents(allEvents);
         }
+    } catch (error) {
+        console.error('Error fetching events:', error);
         
-        // Process and display events
-        allEvents = parseEventsFromJSON(eventsContent);
-        filterEvents();
-    });
+        if (error.name === 'AbortError') {
+            showError('Request timed out. Please try again later.');
+        } else {
+            showError(error.message || 'Failed to fetch events. Please try again later.');
+        }
+    } finally {
+        loadingElement.classList.add('hidden');
+    }
 }
 
 // Function to parse events from JSON response with additional security
 function parseEventsFromJSON(eventsText) {
     try {
-        console.log("Parsing events from:", typeof eventsText, eventsText ? eventsText.substring(0, 100) + "..." : "undefined");
+        // Only log in development mode
+        const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         
-        // Handle undefined or empty input
-        if (!eventsText) {
-            console.error('Events text is undefined or empty');
-            return [];
-        }
+        // Clean the text to ensure it's valid JSON
+        let cleanedText = eventsText.trim();
+        // Remove any markdown code block markers if present
+        cleanedText = cleanedText.replace(/```json\s*|\s*```/g, '');
         
-        // If eventsText is already an array, use it directly
-        let eventsData;
-        if (Array.isArray(eventsText)) {
-            eventsData = eventsText;
-        } else {
-            // Try to extract JSON array from the text
-            // First, try to parse as is
-            try {
-                eventsData = JSON.parse(eventsText);
-            } catch (parseError) {
-                console.warn('Initial JSON parse failed, trying to extract JSON array', parseError);
-                
-                // Try to find JSON array in the text (in case there's extra text)
-                const jsonArrayMatch = eventsText.match(/\[\s*\{.*\}\s*\]/s);
-                if (jsonArrayMatch) {
-                    try {
-                        eventsData = JSON.parse(jsonArrayMatch[0]);
-                        console.log('Successfully extracted JSON array from text');
-                    } catch (extractError) {
-                        console.error('Failed to extract JSON array:', extractError);
-                        
-                        // Fallback: Create a sample event to show the user something
-                        return createFallbackEvents();
-                    }
-                } else {
-                    console.error('No JSON array found in response');
-                    
-                    // Fallback: Create a sample event to show the user something
-                    return createFallbackEvents();
-                }
+        // Try to find a JSON array in the text if it's not already valid JSON
+        if (!cleanedText.startsWith('[') && !cleanedText.startsWith('{')) {
+            const jsonMatch = cleanedText.match(/\[\s*\{.*\}\s*\]/s);
+            if (jsonMatch) {
+                cleanedText = jsonMatch[0];
             }
         }
         
+        if (isDev) console.log("Cleaned text length:", cleanedText.length);
+        
+        // Parse the JSON
+        let eventsData;
+        try {
+            eventsData = JSON.parse(cleanedText);
+        } catch (parseError) {
+            if (isDev) console.error("JSON parse error:", parseError);
+            // Try to extract JSON from text if it's embedded in other content
+            const jsonMatch = cleanedText.match(/\[.*\]/s);
+            if (jsonMatch) {
+                try {
+                    eventsData = JSON.parse(jsonMatch[0]);
+                } catch (e) {
+                    if (isDev) console.error("Failed to extract JSON:", e);
+                    return [];
+                }
+            } else {
+                return [];
+            }
+        }
+        
+        // Validate that eventsData is an array
         if (!Array.isArray(eventsData)) {
-            console.error('Events data is not an array:', eventsData);
-            
-            // Fallback: Create a sample event to show the user something
-            return createFallbackEvents();
+            if (isDev) console.error('Events data is not an array:', typeof eventsData);
+            // If it's an object with an events property that is an array, use that
+            if (eventsData && Array.isArray(eventsData.events)) {
+                eventsData = eventsData.events;
+            } else {
+                return [];
+            }
         }
         
-        if (eventsData.length === 0) {
-            console.warn('API returned an empty array of events');
-            
-            // Fallback: Create a sample event to show the user something
-            return createFallbackEvents();
-        }
-        
-        console.log(`Found ${eventsData.length} events in the response`);
-        
+        // Get current date for filtering past events
         const currentDate = new Date();
+        currentDate.setHours(0, 0, 0, 0); // Set to beginning of day for accurate comparison
         
-        // Process and sanitize each event
+        // Process each event with sanitization and filter out past events
         const processedEvents = eventsData
             .map(event => {
-                // Create a sanitized event object with all properties as strings
+                // Ensure all properties exist and are strings
                 const sanitizedEvent = {
-                    title: String(event.title || 'Untitled Event'),
-                    date: String(event.date || 'Date TBD'),
-                    location: String(event.location || 'Location TBD'),
-                    address: String(event.address || ''),
-                    description: String(event.description || ''),
-                    category: String(event.category || 'Uncategorized'),
-                    url: String(event.url || '')
+                    title: typeof event.title === 'string' ? escapeHTML(event.title) : 'No Title',
+                    date: typeof event.date === 'string' ? escapeHTML(event.date) : 'Date not specified',
+                    location: typeof event.location === 'string' ? escapeHTML(event.location) : 'Location not specified',
+                    address: typeof event.address === 'string' ? escapeHTML(event.address) : 'Address not specified',
+                    category: typeof event.category === 'string' ? escapeHTML(event.category) : 'Other',
+                    description: typeof event.description === 'string' ? escapeHTML(event.description) : 'No description available',
+                    url: typeof event.url === 'string' ? event.url : '#'
                 };
                 
-                // Validate URL format
-                if (sanitizedEvent.url && !isValidURL(sanitizedEvent.url)) {
-                    console.warn(`Invalid URL found: ${sanitizedEvent.url}`);
-                    sanitizedEvent.url = '';
-                }
-                
-                // Try to parse the date for better filtering
+                // Try to parse the event date
                 sanitizedEvent.parsedDate = parseEventDate(sanitizedEvent.date);
+                
+                // Validate URL
+                if (sanitizedEvent.url !== '#') {
+                    try {
+                        const url = new URL(sanitizedEvent.url);
+                        // Only allow http and https protocols
+                        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                            sanitizedEvent.url = '#';
+                        }
+                    } catch (e) {
+                        // If URL is invalid, set to '#'
+                        sanitizedEvent.url = '#';
+                    }
+                }
                 
                 return sanitizedEvent;
             })
             .filter(event => {
                 // Filter out events with dates in the past
                 if (event.parsedDate) {
-                    const isInFuture = event.parsedDate >= currentDate;
-                    console.log(`Filtering event: ${event.title}, Date: ${event.parsedDate}, Include: ${isInFuture}`);
-                    return isInFuture;
+                    return event.parsedDate >= currentDate;
                 }
                 // If we couldn't parse the date, include the event (benefit of doubt)
-                console.log(`Including event with unparseable date: ${event.title}, Date: ${event.date}`);
                 return true;
-            })
-            .sort((a, b) => {
-                // Get the current sort order preference
-                const sortOrder = sortOrderSelect.value;
-                
-                // Sort events by date based on user preference
-                if (a.parsedDate && b.parsedDate) {
-                    // For "recent" (soonest first), use ascending order (a - b)
-                    // For "future" (latest first), use descending order (b - a)
-                    return sortOrder === 'recent' ? a.parsedDate - b.parsedDate : b.parsedDate - a.parsedDate;
-                } else if (a.parsedDate) {
-                    return -1; // a has a date, b doesn't, so a comes first
-                } else if (b.parsedDate) {
-                    return 1; // b has a date, a doesn't, so b comes first
-                }
-                return 0; // neither has a parseable date, maintain original order
             });
         
-        console.log(`Processed ${eventsData.length} events, returning ${processedEvents.length} events`);
-        
-        // Format dates for display
-        processedEvents.forEach(event => {
-            if (event.parsedDate) {
-                event.formattedDate = event.parsedDate.toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                });
-                event.date = event.formattedDate;
-            }
-        });
-        
-        // If we ended up with no events after filtering, return fallback events
-        if (processedEvents.length === 0) {
-            console.warn('No events left after filtering, using fallback');
-            return createFallbackEvents();
-        }
-        
+        if (isDev) console.log(`Processed ${eventsData.length} events, returning ${processedEvents.length} events`);
         return processedEvents;
     } catch (error) {
         console.error('Error parsing events JSON:', error);
-        return createFallbackEvents();
+        return [];
     }
-}
-
-// Function to create fallback events when API fails
-function createFallbackEvents() {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-    
-    const nextWeek = new Date(today);
-    nextWeek.setDate(today.getDate() + 7);
-    
-    return [
-        {
-            title: "API Error - Please Try Again",
-            date: "Error retrieving events",
-            location: "We encountered an issue fetching events",
-            address: "",
-            description: "There was a problem retrieving events from our data source. Please try again with a different location or API provider. If the problem persists, try again later.",
-            category: "Error",
-            url: "",
-            parsedDate: tomorrow,
-            formattedDate: tomorrow.toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            })
-        },
-        {
-            title: "Try Different Search Parameters",
-            date: nextWeek.toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            }),
-            location: "Suggestion",
-            address: "",
-            description: "Try searching with a different location, radius, or category. You can also try switching between Perplexity and Gemini API providers to see different results.",
-            category: "Suggestion",
-            url: "",
-            parsedDate: nextWeek
-        }
-    ];
 }
 
 // Helper function to parse event dates in various formats
 function parseEventDate(dateString) {
     if (!dateString) return null;
     
-    console.log("Parsing date:", dateString);
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     
     // Try to handle various date formats
     
@@ -443,7 +262,6 @@ function parseEventDate(dateString) {
     try {
         const date = new Date(dateString);
         if (!isNaN(date.getTime())) {
-            console.log("  Parsed as standard date:", date);
             return date;
         }
     } catch (e) {
@@ -456,14 +274,12 @@ function parseEventDate(dateString) {
     today.setHours(0, 0, 0, 0);
     
     if (lowerDateString.includes('today')) {
-        console.log("  Parsed as today:", today);
         return today;
     }
     
     if (lowerDateString.includes('tomorrow')) {
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
-        console.log("  Parsed as tomorrow:", tomorrow);
         return tomorrow;
     }
     
@@ -473,7 +289,6 @@ function parseEventDate(dateString) {
         const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
         const daysUntilSaturday = dayOfWeek === 6 ? 0 : 6 - dayOfWeek;
         nextSaturday.setDate(today.getDate() + daysUntilSaturday);
-        console.log("  Parsed as this weekend:", nextSaturday);
         return nextSaturday;
     }
     
@@ -496,7 +311,6 @@ function parseEventDate(dateString) {
                 
                 const eventDate = new Date(year, month, day);
                 if (!isNaN(eventDate.getTime())) {
-                    console.log(`  Parsed as ${monthNames[i]} ${day}, ${year}:`, eventDate);
                     return eventDate;
                 }
             }
@@ -513,7 +327,6 @@ function parseEventDate(dateString) {
         
         const eventDate = new Date(year, month, day);
         if (!isNaN(eventDate.getTime())) {
-            console.log(`  Parsed as ${month+1}/${day}/${year}:`, eventDate);
             return eventDate;
         }
     }
@@ -528,7 +341,6 @@ function parseEventDate(dateString) {
         
         const eventDate = new Date(year, month, day);
         if (!isNaN(eventDate.getTime())) {
-            console.log(`  Parsed as ${year}-${month+1}-${day}:`, eventDate);
             return eventDate;
         }
     }
@@ -537,18 +349,15 @@ function parseEventDate(dateString) {
     if (lowerDateString.includes('next week')) {
         const nextWeek = new Date(today);
         nextWeek.setDate(today.getDate() + 7);
-        console.log("  Parsed as next week:", nextWeek);
         return nextWeek;
     }
     
     if (lowerDateString.includes('this month')) {
         // Return the current date as we're already in this month
-        console.log("  Parsed as this month:", today);
         return today;
     }
     
     // If all parsing attempts fail, return null
-    console.log("  Failed to parse date");
     return null;
 }
 
@@ -556,65 +365,87 @@ function parseEventDate(dateString) {
 function displayEvents(events) {
     eventsContainer.innerHTML = '';
     
-    if (events.length === 0) {
-        showError('No events found matching your criteria. Try adjusting your filters or search location.');
+    if (!events || events.length === 0) {
+        showError('No events found. Please try a different location or filters.');
         return;
     }
     
-    hideError();
+    console.log(`Displaying ${events.length} events`);
     
-    events.forEach(event => {
+    // Create a document fragment to improve performance
+    const fragment = document.createDocumentFragment();
+    
+    // Limit the number of events to display at once to improve performance
+    const maxEventsToDisplay = 50;
+    const eventsToDisplay = events.slice(0, maxEventsToDisplay);
+    
+    // Add a message if we're limiting the display
+    if (events.length > maxEventsToDisplay) {
+        const limitMessage = document.createElement('div');
+        limitMessage.className = 'limit-message';
+        limitMessage.innerHTML = `<p>Showing ${maxEventsToDisplay} of ${events.length} events. Use filters to narrow results.</p>`;
+        fragment.appendChild(limitMessage);
+    }
+    
+    eventsToDisplay.forEach(event => {
         const eventCard = document.createElement('div');
         eventCard.className = 'event-card';
-        eventCard.style.animation = 'fadeIn 0.5s ease-in-out';
+        eventCard.dataset.category = event.category.toLowerCase();
         
-        // Create a random gradient background for the card
-        const hue = Math.floor(Math.random() * 360);
-        eventCard.style.background = `linear-gradient(135deg, hsla(${hue}, 70%, 35%, 0.2), hsla(${hue + 40}, 70%, 25%, 0.2))`;
+        // Create the link element with rel="noopener noreferrer" for security
+        const linkHtml = event.url && event.url !== '#' 
+            ? `<div class="event-link"><a href="${event.url}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i> Event Details</a></div>`
+            : '';
         
-        let eventHTML = `
+        // Format the date nicely if possible
+        let formattedDate = event.date;
+        try {
+            if (event.parsedDate) {
+                formattedDate = event.parsedDate.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+            } else if (event.date.match(/\d{4}-\d{2}-\d{2}/)) {
+                const dateObj = new Date(event.date);
+                formattedDate = dateObj.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+            }
+        } catch (e) {
+            console.error("Error formatting date:", e);
+            // Keep original date format if parsing fails
+        }
+        
+        // Use innerHTML with pre-sanitized content
+        eventCard.innerHTML = `
             <div class="event-details">
-                <h2 class="event-title">${escapeHTML(event.title)}</h2>
-                <div class="event-date"><i class="far fa-calendar-alt"></i> ${escapeHTML(event.date)}</div>
-                <div class="event-location"><i class="fas fa-map-marker-alt"></i> ${escapeHTML(event.location)}</div>
+                <h3 class="event-title">${event.title}</h3>
+                <div class="event-date"><i class="far fa-calendar-alt"></i> ${formattedDate}</div>
+                <div class="event-location"><i class="fas fa-map-marker-alt"></i> ${event.location}</div>
+                <div class="event-address"><i class="fas fa-home"></i> ${event.address}</div>
+                <div class="event-category"><i class="fas fa-tag"></i> ${event.category}</div>
+                ${linkHtml}
+                <p class="event-description">${event.description}</p>
+            </div>
         `;
         
-        if (event.address) {
-            eventHTML += `<div class="event-address"><i class="fas fa-location-dot"></i> ${escapeHTML(event.address)}</div>`;
-        }
-        
-        if (event.category) {
-            eventHTML += `<div class="event-category"><i class="fas fa-tag"></i> ${escapeHTML(event.category)}</div>`;
-        }
-        
-        if (event.description) {
-            eventHTML += `<div class="event-description">${escapeHTML(event.description)}</div>`;
-        }
-        
-        if (event.url) {
-            eventHTML += `
-                <div class="event-link">
-                    <a href="${escapeHTML(event.url)}" target="_blank" rel="noopener noreferrer">
-                        <i class="fas fa-external-link-alt"></i> More Info
-                    </a>
-                </div>
-            `;
-        }
-        
-        eventHTML += `</div>`;
-        eventCard.innerHTML = eventHTML;
-        eventsContainer.appendChild(eventCard);
+        fragment.appendChild(eventCard);
     });
     
-    // Scroll to events container
-    eventsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Append all events at once for better performance
+    eventsContainer.appendChild(fragment);
 }
 
 // Function to filter events
 function filterEvents() {
     const category = categoryFilter.value;
     const dateFilter = document.getElementById('date-filter').value;
-    const sortOrder = sortOrderSelect.value;
+    const sort = sortOrder.value;
     
     let filteredEvents = [...allEvents];
     
@@ -623,33 +454,20 @@ function filterEvents() {
         filteredEvents = filteredEvents.filter(event => {
             const eventCategory = event.category.toLowerCase();
             
-            // Standardized category mapping
-            const categoryMappings = {
-                'music': ['music', 'concert', 'band', 'festival', 'performance'],
-                'sports': ['sports', 'game', 'match', 'tournament', 'athletic'],
-                'arts': ['arts', 'art', 'culture', 'museum', 'gallery', 'exhibition', 'arts & culture'],
-                'food': ['food', 'drink', 'dining', 'culinary', 'tasting', 'food & drink'],
-                'outdoor': ['outdoor', 'nature', 'hiking', 'park', 'adventure'],
-                'family': ['family', 'kid', 'kids', 'children', 'family & kids'],
-                'comedy': ['comedy', 'stand-up', 'improv', 'humor'],
-                'theater': ['theater', 'theatre', 'show', 'play', 'musical', 'theater & shows'],
-                'festivals': ['festival', 'fair', 'celebration', 'carnival'],
-                'nightlife': ['nightlife', 'club', 'party', 'bar', 'dance'],
-                'business': ['business', 'network', 'networking', 'professional', 'business & networking'],
-                'education': ['education', 'learning', 'workshop', 'class', 'seminar', 'education & learning'],
-                'charity': ['charity', 'cause', 'fundraiser', 'volunteer', 'charity & causes'],
-                'health': ['health', 'wellness', 'fitness', 'yoga', 'meditation', 'health & wellness'],
-                'tech': ['tech', 'technology', 'digital', 'coding', 'software', 'hardware']
-            };
-            
-            // Check if the event category contains any of the keywords for the selected category
-            if (categoryMappings[category]) {
-                return categoryMappings[category].some(keyword => 
-                    eventCategory.includes(keyword)
-                );
+            // Handle some common category variations
+            if (category === 'arts' && (eventCategory.includes('art') || eventCategory.includes('culture') || eventCategory.includes('museum'))) {
+                return true;
+            }
+            if (category === 'food' && (eventCategory.includes('food') || eventCategory.includes('drink') || eventCategory.includes('dining') || eventCategory.includes('culinary'))) {
+                return true;
+            }
+            if (category === 'family' && (eventCategory.includes('family') || eventCategory.includes('kid') || eventCategory.includes('children'))) {
+                return true;
+            }
+            if (category === 'business' && (eventCategory.includes('business') || eventCategory.includes('network') || eventCategory.includes('professional'))) {
+                return true;
             }
             
-            // Fallback to simple matching
             return eventCategory.includes(category);
         });
     }
@@ -724,19 +542,19 @@ function filterEvents() {
         });
     }
     
-    // Sort events by date based on user preference
-    filteredEvents.sort((a, b) => {
-        if (a.parsedDate && b.parsedDate) {
-            // For "recent" (soonest first), use ascending order (a - b)
-            // For "future" (latest first), use descending order (b - a)
-            return sortOrder === 'recent' ? a.parsedDate - b.parsedDate : b.parsedDate - a.parsedDate;
-        } else if (a.parsedDate) {
-            return -1; // a has a date, b doesn't, so a comes first
-        } else if (b.parsedDate) {
-            return 1; // b has a date, a doesn't, so b comes first
-        }
-        return 0; // neither has a parseable date, maintain original order
-    });
+    // Sort events by date
+    if (filteredEvents.length > 0) {
+        filteredEvents.sort((a, b) => {
+            // If we have parsed dates, use them for sorting
+            if (a.parsedDate && b.parsedDate) {
+                return sort === 'recent' 
+                    ? a.parsedDate - b.parsedDate 
+                    : b.parsedDate - a.parsedDate;
+            }
+            // Fallback to string comparison if dates couldn't be parsed
+            return 0;
+        });
+    }
     
     displayEvents(filteredEvents);
 }
@@ -748,110 +566,18 @@ function isSameDay(date1, date2) {
            date1.getDate() === date2.getDate();
 }
 
-// Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.focused {
-    box-shadow: 0 0 0 3px rgba(74, 108, 247, 0.3);
-    border-radius: var(--border-radius);
-}
-`;
-document.head.appendChild(style);
-
-// Initialize with placeholder text
-if (eventsContainer.innerHTML.trim() === '') {
-    eventsContainer.innerHTML = `
-        <div class="initial-message" style="text-align: center; padding: 50px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border-radius: 10px;">
-            <i class="fas fa-search" style="font-size: 3rem; color: var(--primary-color); margin-bottom: 20px;"></i>
-            <h2 style="margin-bottom: 15px; color: white;">Ready to discover events?</h2>
-            <p style="color: rgba(255, 255, 255, 0.9);">Enter your location above and click "Find Events" to get started.</p>
-        </div>
-    `;
-}
-
-// Add active state for select wrappers
-document.querySelectorAll('.select-wrapper select').forEach(select => {
-    // Add focus event to add active class
-    select.addEventListener('focus', function() {
-        this.closest('.select-wrapper').classList.add('active');
-    });
-    
-    // Add blur event to remove active class
-    select.addEventListener('blur', function() {
-        this.closest('.select-wrapper').classList.remove('active');
-    });
-    
-    // Add change event to highlight selected options
-    select.addEventListener('change', function() {
-        // First remove active from all options in this group
-        const allSelects = document.querySelectorAll('.select-wrapper select');
-        allSelects.forEach(s => {
-            if (s !== this && s.id !== 'api-select') {
-                s.closest('.select-wrapper').classList.remove('has-value');
-            }
-        });
-        
-        // Add active class if a non-default value is selected
-        if (this.selectedIndex > 0 || 
-            (this.id === 'radius-select' && this.value !== '10') ||
-            (this.id === 'sort-order' && this.value !== 'recent') ||
-            (this.id === 'api-select' && this.value !== 'perplexity')) {
-            this.closest('.select-wrapper').classList.add('has-value');
-        } else {
-            this.closest('.select-wrapper').classList.remove('has-value');
-        }
-    });
-    
-    // Initialize active state for pre-selected values
-    if (select.selectedIndex > 0 || 
-        (select.id === 'radius-select' && select.value !== '10') ||
-        (select.id === 'sort-order' && select.value !== 'recent') ||
-        (select.id === 'api-select' && select.value !== 'perplexity')) {
-        select.closest('.select-wrapper').classList.add('has-value');
-    }
-});
-
-// Function to check API endpoint availability
-function checkApiEndpoints() {
-    console.log('Checking API endpoint availability...');
-    
-    // Array of endpoints to check
-    const endpoints = [
-        '/api/health',
-        '/api/debug',
-        'api/health',
-        'api/debug',
-        '/server.js/api/health',
-        '/server.js/api/debug'
+// Function to get a random event image (not used anymore but kept for compatibility)
+function getRandomEventImage() {
+    const images = [
+        'https://images.unsplash.com/photo-1540575467063-178a50c2df87?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1414525253161-7a46d19cd819?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1504674900247-0877df9cc836?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
+        'https://images.unsplash.com/photo-1533659124865-d6072dc035e1?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80'
     ];
     
-    // Check each endpoint
-    endpoints.forEach(endpoint => {
-        fetch(endpoint)
-            .then(response => {
-                console.log(`Endpoint ${endpoint}: ${response.status} ${response.ok ? 'OK' : 'Failed'}`);
-                return response.text();
-            })
-            .then(text => {
-                try {
-                    // Try to parse as JSON
-                    const data = JSON.parse(text);
-                    console.log(`Endpoint ${endpoint} response:`, data);
-                } catch (e) {
-                    // Log as text if not JSON
-                    console.log(`Endpoint ${endpoint} response (text):`, text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-                }
-            })
-            .catch(error => {
-                console.error(`Endpoint ${endpoint} error:`, error);
-            });
-    });
-}
-
-// Run the endpoint check on page load
-window.addEventListener('load', checkApiEndpoints); 
+    return images[Math.floor(Math.random() * images.length)];
+} 

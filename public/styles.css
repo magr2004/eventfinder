@@ -198,27 +198,23 @@ header p {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border-radius: var(--border-radius);
-    margin-bottom: 30px;
+    padding: 2rem;
+    text-align: center;
 }
 
 .spinner {
     width: 50px;
     height: 50px;
-    border: 5px solid rgba(255, 255, 255, 0.3);
+    border: 5px solid rgba(0, 0, 0, 0.1);
     border-radius: 50%;
-    border-top-color: var(--primary-color);
+    border-top-color: #0a1f44;
     animation: spin 1s ease-in-out infinite;
-    margin-bottom: 20px;
+    margin-bottom: 1rem;
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 #loading p {
@@ -243,6 +239,8 @@ header p {
     height: 100%;
     display: flex;
     flex-direction: column;
+    will-change: transform;
+    transform: translateZ(0);
 }
 
 .event-card:hover {
@@ -396,4 +394,16 @@ header p {
 
 .select-wrapper.has-value i {
     color: white;
+}
+
+/* Add styles for the limit message */
+.limit-message {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #6c757d;
+    border-left: 4px solid #17a2b8;
+    font-size: 0.9rem;
 } 
