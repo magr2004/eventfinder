@@ -421,16 +421,22 @@ function displayEvents(events) {
             // Keep original date format if parsing fails
         }
         
+        // Create a category badge
+        const categoryClass = getCategoryClass(event.category.toLowerCase());
+        const categoryBadge = `<span class="category-badge ${categoryClass}">${event.category}</span>`;
+        
         // Use innerHTML with pre-sanitized content
         eventCard.innerHTML = `
             <div class="event-details">
+                ${categoryBadge}
                 <h3 class="event-title">${event.title}</h3>
-                <div class="event-date"><i class="far fa-calendar-alt"></i> ${formattedDate}</div>
-                <div class="event-location"><i class="fas fa-map-marker-alt"></i> ${event.location}</div>
-                <div class="event-address"><i class="fas fa-home"></i> ${event.address}</div>
-                <div class="event-category"><i class="fas fa-tag"></i> ${event.category}</div>
-                ${linkHtml}
+                <div class="event-meta">
+                    <div class="event-date"><i class="far fa-calendar-alt"></i> ${formattedDate}</div>
+                    <div class="event-location"><i class="fas fa-map-marker-alt"></i> ${event.location}</div>
+                    <div class="event-address"><i class="fas fa-home"></i> ${event.address}</div>
+                </div>
                 <p class="event-description">${event.description}</p>
+                ${linkHtml}
             </div>
         `;
         
@@ -439,6 +445,46 @@ function displayEvents(events) {
     
     // Append all events at once for better performance
     eventsContainer.appendChild(fragment);
+}
+
+// Helper function to get category class for styling
+function getCategoryClass(category) {
+    const categoryMap = {
+        'music': 'cat-music',
+        'sports': 'cat-sports',
+        'arts': 'cat-arts',
+        'culture': 'cat-arts',
+        'food': 'cat-food',
+        'drink': 'cat-food',
+        'outdoor': 'cat-outdoor',
+        'family': 'cat-family',
+        'kids': 'cat-family',
+        'comedy': 'cat-comedy',
+        'theater': 'cat-theater',
+        'shows': 'cat-theater',
+        'festivals': 'cat-festivals',
+        'nightlife': 'cat-nightlife',
+        'business': 'cat-business',
+        'networking': 'cat-business',
+        'education': 'cat-education',
+        'learning': 'cat-education',
+        'charity': 'cat-charity',
+        'causes': 'cat-charity',
+        'health': 'cat-health',
+        'wellness': 'cat-health',
+        'tech': 'cat-tech',
+        'technology': 'cat-tech'
+    };
+    
+    // Check if the category contains any of our mapped keywords
+    for (const [key, value] of Object.entries(categoryMap)) {
+        if (category.includes(key)) {
+            return value;
+        }
+    }
+    
+    // Default category class
+    return 'cat-other';
 }
 
 // Function to filter events

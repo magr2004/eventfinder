@@ -36,7 +36,7 @@ const corsOptions = {
         // Allow requests with no origin (like mobile apps, curl requests)
         if (!origin) return callback(null, true);
         
-        const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['https://yourdomain.com'];
+        const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://yourdomain.com'];
         
         // In production, check against the allowed origins list
         if (allowedOrigins.includes('*') || allowedOrigins.indexOf(origin) !== -1) {
@@ -154,7 +154,7 @@ async function handlePerplexityRequest(req, res) {
         
         // If a specific category is requested
         if (sanitizedCategory && sanitizedCategory !== 'all') {
-            query += `Focus on ${sanitizedCategory} events. `;
+            query += `***Only return ${sanitizedCategory} events or activities. ***`;
         }
         
         query += `Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`;
@@ -172,7 +172,7 @@ async function handlePerplexityRequest(req, res) {
         res.setHeader('Cache-Control', 'public, max-age=900');
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
         
         try {
             const response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -275,7 +275,7 @@ async function handleGeminiRequest(req, res) {
         res.setHeader('Cache-Control', 'public, max-age=900');
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
         
         try {
             const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + process.env.GEMINI_API_KEY, {
@@ -291,7 +291,7 @@ async function handleGeminiRequest(req, res) {
                                 {
                                     text: `You are a helpful assistant that provides information about local activities and events in JSON format. Always respond with valid JSON only. For each event, include a valid URL to the official event page or ticket page. Categorize each event using one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other. Keep descriptions brief.
 
-${query}`
+                                    ${query}`
                                 }
                             ]
                         }
@@ -353,7 +353,7 @@ app.get('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, `0.0.0.0`, () => {
     console.log(`Server running on port ${PORT}`);
 });
 

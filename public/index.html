@@ -6,19 +6,29 @@
     <meta name="description" content="Find local events happening near you. Discover concerts, festivals, sports, and more with our easy-to-use event finder.">
     <meta name="keywords" content="events, local events, concerts, festivals, sports events, event finder">
     <meta name="author" content="Event Finder">
-    <meta name="theme-color" content="#0a1f44">
+    <meta name="theme-color" content="#4361ee">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' https://images.unsplash.com; connect-src 'self' https://api.perplexity.ai https://generativelanguage.googleapis.com;">
     <title>Local Event Finder | Discover Events Near You</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>">
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <!-- Background elements -->
+    <div class="bg-elements">
+        <div class="bg-circle circle-1"></div>
+        <div class="bg-circle circle-2"></div>
+        <div class="bg-circle circle-3"></div>
+    </div>
+    
     <div class="container">
         <header>
+            <div class="logo">
+                <i class="fas fa-map-marked-alt"></i>
+            </div>
             <h1>Local Event Finder</h1>
             <p>Discover exciting events and activities happening near you</p>
+            <div class="header-accent"></div>
         </header>
         
         <div class="search-container">
@@ -98,6 +108,11 @@
         <div id="loading" class="hidden">
             <div class="spinner"></div>
             <p>Searching for events in your area...</p>
+            <div class="loading-dots">
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+            </div>
         </div>
         
         <div id="events-container">
@@ -107,8 +122,12 @@
         <div id="error-message" class="hidden">
             <p><i class="fas fa-exclamation-circle"></i> Sorry, we couldn't find any events. Please try a different location or filters.</p>
         </div>
+        
+        <footer>
+            <p>© 2023 Event Finder | Powered by Next.js</p>
+        </footer>
     </div>
     
-    <script src="app.js"></script>
+    <script src="/app.js"></script>
 </body>
 </html> 
