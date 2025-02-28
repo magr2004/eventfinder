@@ -150,15 +150,15 @@ async function handlePerplexityRequest(req, res) {
                 timeFrame = 'in the next 30 days';
         }
 
-        let query = `Find future events happening near ${sanitizedLocation} within ${sanitizedRadius} miles for ${timeFrame}. `;
-        
+        let query = `Find CURRENT and UPCOMING events happening near ${sanitizedLocation} within ${sanitizedRadius} miles ${timeFrame}. `;
+
         // If a specific category is requested
         if (sanitizedCategory && sanitizedCategory !== 'all') {
             query += `***Only return ${sanitizedCategory} events or activities. ***`;
         }
         
-        query += `Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`;
-        
+        query += `Search the internet for the most recent information about these events. ONLY include events that are happening in the future (after today's date which is ${new Date().toLocaleDateString()}). DO NOT include any events from past years or months. Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`;
+
         if (process.env.NODE_ENV === 'development') {
             console.log("Query to Perplexity:", query);
         }
@@ -186,7 +186,8 @@ async function handlePerplexityRequest(req, res) {
                     messages: [
                         {
                             role: 'system',
-                            content: 'You are a helpful assistant that provides information about local activities and events in JSON format. Always respond with valid JSON only. For each event, include a valid URL to the official event page or ticket page. Categorize each event using one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other. Don\'t return events older than today. Keep descriptions brief.'
+                            content: `You are a helpful assistant that provides information about local activities and events in JSON format. Always respond with valid JSON only. For each event, include a valid URL to the official event page or ticket page. Categorize each event using one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other. Keep descriptions brief.
+                                    Today's date is ${new Date().toLocaleDateString()}. Find CURRENT and UPCOMING events happening near ${sanitizedLocation} within ${sanitizedRadius} miles ${timeFrame}. ${sanitizedCategory !== 'all' ? `Focus on ${sanitizedCategory} events. ` : ''}ONLY include events that are happening in the future (after today's date). DO NOT include any events from past years or months. Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`
                         },
                         {
                             role: 'user',
@@ -217,7 +218,7 @@ async function handlePerplexityRequest(req, res) {
     }
 }
 
-// Handle Gemini API requests
+// Handle Gemini API requests using direct REST API call
 async function handleGeminiRequest(req, res) {
     const { location, radius, category, eventDate } = req.body;
     
@@ -253,31 +254,33 @@ async function handleGeminiRequest(req, res) {
                 timeFrame = 'in the next 30 days';
         }
 
-        let query = `Find events happening near ${sanitizedLocation} within ${sanitizedRadius} miles ${timeFrame}. `;
+        // Check if API key exists
+        if (!process.env.GEMINI_API_KEY) {
+            throw new Error('Gemini API key is missing');
+        }
+
+        // Build the query
+        let query = `Find CURRENT and UPCOMING events happening near ${sanitizedLocation} within ${sanitizedRadius} miles ${timeFrame}. `;
         
         // If a specific category is requested
         if (sanitizedCategory && sanitizedCategory !== 'all') {
             query += `Focus on ${sanitizedCategory} events. `;
         }
         
-        query += `Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`;
+        query += `Search the internet for the most recent information about these events. ONLY include events that are happening in the future (after today's date which is ${new Date().toLocaleDateString()}). DO NOT include any events from past years or months. Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`;
         
         if (process.env.NODE_ENV === 'development') {
-            console.log("Query to Gemini:", query);
+            console.log("Query to Gemini with web search:", query);
         }
-        
-        // Check if API key exists
-        if (!process.env.GEMINI_API_KEY) {
-            throw new Error('Gemini API key is missing');
-        }
-        
+
         // Set cache headers for 15 minutes
         res.setHeader('Cache-Control', 'public, max-age=900');
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
         
         try {
+            // Use the REST API directly without web search
             const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + process.env.GEMINI_API_KEY, {
                 method: 'POST',
                 headers: {
@@ -290,8 +293,7 @@ async function handleGeminiRequest(req, res) {
                             parts: [
                                 {
                                     text: `You are a helpful assistant that provides information about local activities and events in JSON format. Always respond with valid JSON only. For each event, include a valid URL to the official event page or ticket page. Categorize each event using one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other. Keep descriptions brief.
-
-                                    ${query}`
+                                    Today's date is ${new Date().toLocaleDateString()}. Find CURRENT and UPCOMING events happening near ${sanitizedLocation} within ${sanitizedRadius} miles ${timeFrame}. ${sanitizedCategory !== 'all' ? `Focus on ${sanitizedCategory} events. ` : ''}ONLY include events that are happening in the future (after today's date). DO NOT include any events from past years or months. Return ONLY a JSON array with each event having these properties: title (string), description (string, keep it brief under 150 characters), location (string), date (string in Month Day, Year format), category (string - use one of these categories: Music, Sports, Arts & Culture, Food & Drink, Outdoor, Family & Kids, Comedy, Theater & Shows, Festivals, Nightlife, Business & Networking, Education & Learning, Charity & Causes, Health & Wellness, Technology, or Other), address (string), and url (string with a valid URL to the official event page or ticket page). Do not include any explanatory text, just the JSON array. Ensure all events are in the future. Limit to 30 events maximum.`
                                 }
                             ]
                         }
@@ -301,7 +303,25 @@ async function handleGeminiRequest(req, res) {
                         topK: 40,
                         topP: 0.95,
                         maxOutputTokens: 8192
-                    }
+                    },
+                    safetySettings: [
+                        {
+                            category: "HARM_CATEGORY_HARASSMENT",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_HATE_SPEECH",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        },
+                        {
+                            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                        }
+                    ]
                 }),
                 signal: controller.signal
             });
@@ -309,6 +329,8 @@ async function handleGeminiRequest(req, res) {
             clearTimeout(timeoutId);
             
             if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Gemini API Error Response:', JSON.stringify(errorData, null, 2));
                 throw new Error(`Failed to fetch events from Gemini API: ${response.status}`);
             }
             
