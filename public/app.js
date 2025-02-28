@@ -131,8 +131,39 @@ function searchEvents() {
     // Increment request ID
     const requestId = ++currentRequestId;
     
-    // Make API request
-    fetch('/api/events', {
+    // Try the main endpoint first
+    makeApiRequest('/api/events', location, radius, category, dateFilter, apiChoice, requestId)
+        .catch(error => {
+            console.error('Main API endpoint failed:', error);
+            
+            // If the main endpoint fails with a NOT_FOUND error, try the alternative endpoint
+            if (error.message.includes('API endpoint not found') || error.message.includes('NOT_FOUND')) {
+                console.log('Trying alternative endpoint...');
+                return makeApiRequest('/server.js/api/events', location, radius, category, dateFilter, apiChoice, requestId);
+            }
+            
+            // Otherwise, rethrow the error
+            throw error;
+        })
+        .catch(error => {
+            // Check if this is still the latest request
+            if (requestId !== currentRequestId) {
+                console.log('Ignoring outdated request error');
+                return;
+            }
+            
+            // Hide loading indicator
+            loadingElement.classList.add('hidden');
+            
+            // Show error message
+            showError(error.message || 'Failed to fetch events. Please try again later.');
+            console.error('Error:', error);
+        });
+}
+
+// Function to make API request
+function makeApiRequest(endpoint, location, radius, category, dateFilter, apiChoice, requestId) {
+    return fetch(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -155,6 +186,10 @@ function searchEvents() {
                 } catch (e) {
                     // If not valid JSON, check if it's HTML (common for server errors)
                     if (text.includes('<!DOCTYPE html>') || text.includes('<html>')) {
+                        console.error('Server returned HTML instead of JSON:', text.substring(0, 200));
+                        if (text.includes('NOT_FOUND')) {
+                            throw new Error('API endpoint not found. This is likely a server configuration issue.');
+                        }
                         throw new Error('Server error occurred. Please try again later.');
                     }
                     // Otherwise just return the text
@@ -197,20 +232,6 @@ function searchEvents() {
         // Process and display events
         allEvents = parseEventsFromJSON(eventsContent);
         filterEvents();
-    })
-    .catch(error => {
-        // Check if this is still the latest request
-        if (requestId !== currentRequestId) {
-            console.log('Ignoring outdated request error');
-            return;
-        }
-        
-        // Hide loading indicator
-        loadingElement.classList.add('hidden');
-        
-        // Show error message
-        showError(error.message || 'Failed to fetch events. Please try again later.');
-        console.error('Error:', error);
     });
 }
 

@@ -116,6 +116,21 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Add a debug endpoint
+app.get('/api/debug', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        environment: process.env.NODE_ENV,
+        timestamp: new Date().toISOString(),
+        headers: req.headers,
+        path: req.path,
+        method: req.method,
+        query: req.query,
+        vercelRegion: process.env.VERCEL_REGION || 'unknown',
+        nodeVersion: process.version
+    });
+});
+
 // API proxy endpoint with validation
 app.post('/api/events', validateEventRequest, async (req, res) => {
     try {

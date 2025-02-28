@@ -72,7 +72,6 @@ After the initial deployment, you need to set up your environment variables:
 After setting up the environment variables, redeploy your application:
 
 ```bash
-vercel --prod
 ```
 
 ## Step 7: Verify Deployment
