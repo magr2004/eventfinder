@@ -28,8 +28,21 @@ app.use('/api/', limiter);
 // CORS configuration
 const corsOptions = {
     origin: function(origin, callback) {
-        // Always allow requests regardless of origin
-        callback(null, true);
+        // In production, check against allowed origins
+        if (process.env.NODE_ENV === 'production') {
+            const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
+                process.env.ALLOWED_ORIGINS.split(',') : [];
+            
+            // Allow requests with no origin (like mobile apps, curl requests)
+            if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        } else {
+            // In development, allow all origins
+            callback(null, true);
+        }
     },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -89,6 +102,19 @@ const validateEventRequest = (req, res, next) => {
     // If all validations pass, continue
     next();
 };
+
+// Add a health check endpoint
+app.get('/api/health', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        environment: process.env.NODE_ENV,
+        timestamp: new Date().toISOString(),
+        apis: {
+            perplexity: !!process.env.PERPLEXITY_API_KEY,
+            gemini: !!process.env.GEMINI_API_KEY
+        }
+    });
+});
 
 // API proxy endpoint with validation
 app.post('/api/events', validateEventRequest, async (req, res) => {
@@ -189,15 +215,40 @@ async function handlePerplexityRequest(req, res) {
             timeout: 55000 // 55 second timeout (slightly less than client timeout)
         });
         
+        // Log response status for debugging
+        console.log(`Perplexity API response status: ${response.status}`);
+        
         if (!response.ok) {
+            // Get the response text for better error logging
+            const errorText = await response.text();
+            console.error(`Perplexity API error response: ${errorText}`);
             throw new Error(`Failed to fetch events from Perplexity API: ${response.status}`);
         }
         
+        // Check content type to ensure we're getting JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.error(`Unexpected content type: ${contentType}`);
+            const text = await response.text();
+            console.error(`Response body: ${text.substring(0, 500)}...`);
+            throw new Error(`Expected JSON but got ${contentType}`);
+        }
+        
         const data = await response.json();
+        
+        // Validate the response structure
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+            console.error('Invalid response structure from Perplexity:', JSON.stringify(data).substring(0, 500));
+            throw new Error('Invalid response structure from Perplexity API');
+        }
+        
         res.json(data);
     } catch (error) {
         console.error('Perplexity API Error:', error);
-        res.status(500).json({ error: 'Failed to fetch events from Perplexity' });
+        res.status(500).json({ 
+            error: 'Failed to fetch events from Perplexity',
+            message: error.message
+        });
     }
 }
 
@@ -275,11 +326,32 @@ async function handleGeminiRequest(req, res) {
             timeout: 55000 // 55 second timeout (slightly less than client timeout)
         });
         
+        // Log response status for debugging
+        console.log(`Gemini API response status: ${response.status}`);
+        
         if (!response.ok) {
+            // Get the response text for better error logging
+            const errorText = await response.text();
+            console.error(`Gemini API error response: ${errorText}`);
             throw new Error(`Failed to fetch events from Gemini API: ${response.status}`);
         }
         
+        // Check content type to ensure we're getting JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.error(`Unexpected content type: ${contentType}`);
+            const text = await response.text();
+            console.error(`Response body: ${text.substring(0, 500)}...`);
+            throw new Error(`Expected JSON but got ${contentType}`);
+        }
+        
         const data = await response.json();
+        
+        // Validate the response structure
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0]) {
+            console.error('Invalid response structure from Gemini:', JSON.stringify(data).substring(0, 500));
+            throw new Error('Invalid response structure from Gemini API');
+        }
         
         // Format Gemini response to match Perplexity structure for client compatibility
         const formattedResponse = {
@@ -295,7 +367,10 @@ async function handleGeminiRequest(req, res) {
         res.json(formattedResponse);
     } catch (error) {
         console.error('Gemini API Error:', error);
-        res.status(500).json({ error: 'Failed to fetch events from Gemini' });
+        res.status(500).json({ 
+            error: 'Failed to fetch events from Gemini',
+            message: error.message
+        });
     }
 }
 
@@ -314,9 +389,15 @@ app.get('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+// Export the Express API for Vercel
+module.exports = app;
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

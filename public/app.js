@@ -147,10 +147,28 @@ function searchEvents() {
     })
     .then(response => {
         if (!response.ok) {
-            return response.json().then(err => {
-                throw new Error(err.error || 'Failed to fetch events');
+            return response.text().then(text => {
+                // Try to parse as JSON first
+                try {
+                    const errorData = JSON.parse(text);
+                    throw new Error(errorData.error || errorData.message || 'Failed to fetch events');
+                } catch (e) {
+                    // If not valid JSON, check if it's HTML (common for server errors)
+                    if (text.includes('<!DOCTYPE html>') || text.includes('<html>')) {
+                        throw new Error('Server error occurred. Please try again later.');
+                    }
+                    // Otherwise just return the text
+                    throw new Error(text || 'Failed to fetch events');
+                }
             });
         }
+        
+        // Check content type to ensure we're getting JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Expected JSON response but got ${contentType}`);
+        }
+        
         return response.json();
     })
     .then(data => {
@@ -227,18 +245,31 @@ function parseEventsFromJSON(eventsText) {
                         console.log('Successfully extracted JSON array from text');
                     } catch (extractError) {
                         console.error('Failed to extract JSON array:', extractError);
-                        return [];
+                        
+                        // Fallback: Create a sample event to show the user something
+                        return createFallbackEvents();
                     }
                 } else {
                     console.error('No JSON array found in response');
-                    return [];
+                    
+                    // Fallback: Create a sample event to show the user something
+                    return createFallbackEvents();
                 }
             }
         }
         
         if (!Array.isArray(eventsData)) {
             console.error('Events data is not an array:', eventsData);
-            return [];
+            
+            // Fallback: Create a sample event to show the user something
+            return createFallbackEvents();
+        }
+        
+        if (eventsData.length === 0) {
+            console.warn('API returned an empty array of events');
+            
+            // Fallback: Create a sample event to show the user something
+            return createFallbackEvents();
         }
         
         console.log(`Found ${eventsData.length} events in the response`);
@@ -313,11 +344,61 @@ function parseEventsFromJSON(eventsText) {
             }
         });
         
+        // If we ended up with no events after filtering, return fallback events
+        if (processedEvents.length === 0) {
+            console.warn('No events left after filtering, using fallback');
+            return createFallbackEvents();
+        }
+        
         return processedEvents;
     } catch (error) {
         console.error('Error parsing events JSON:', error);
-        return [];
+        return createFallbackEvents();
     }
+}
+
+// Function to create fallback events when API fails
+function createFallbackEvents() {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    
+    return [
+        {
+            title: "API Error - Please Try Again",
+            date: "Error retrieving events",
+            location: "We encountered an issue fetching events",
+            address: "",
+            description: "There was a problem retrieving events from our data source. Please try again with a different location or API provider. If the problem persists, try again later.",
+            category: "Error",
+            url: "",
+            parsedDate: tomorrow,
+            formattedDate: tomorrow.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            })
+        },
+        {
+            title: "Try Different Search Parameters",
+            date: nextWeek.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            }),
+            location: "Suggestion",
+            address: "",
+            description: "Try searching with a different location, radius, or category. You can also try switching between Perplexity and Gemini API providers to see different results.",
+            category: "Suggestion",
+            url: "",
+            parsedDate: nextWeek
+        }
+    ];
 }
 
 // Helper function to parse event dates in various formats
