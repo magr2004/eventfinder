@@ -24,6 +24,7 @@ locationInput.addEventListener('keypress', function(e) {
     }
 });
 
+
 // Store all events to use for filtering
 let allEvents = [];
 
@@ -119,10 +120,12 @@ async function searchEvents() {
         // Process the response
         if (data.choices && data.choices[0] && data.choices[0].message) {
             const content = data.choices[0].message.content;
+            console.log('Raw API response content:', content);
             
             try {
                 // Clean the JSON string before parsing
                 const cleanedContent = cleanJsonString(content);
+                console.log('Cleaned content:', cleanedContent);
                 
                 // Try to parse the content as JSON
                 allEvents = JSON.parse(cleanedContent);
@@ -131,21 +134,70 @@ async function searchEvents() {
                 displayEvents(allEvents);
             } catch (parseError) {
                 console.error('Error parsing JSON:', parseError);
-                console.log('Raw content:', content);
                 
-                // Try to extract JSON from the content if it contains markdown or other formatting
+                // Try a more aggressive approach to extract JSON
                 try {
-                    const jsonMatch = content.match(/\[\s*\{.*\}\s*\]/s);
-                    if (jsonMatch) {
-                        allEvents = JSON.parse(jsonMatch[0]);
-                        displayEvents(allEvents);
+                    // Look for anything that resembles an array of objects
+                    const regex = /\[\s*\{\s*"[^"]+"\s*:/;
+                    const startMatch = content.match(regex);
+                    
+                    if (startMatch) {
+                        const startIndex = startMatch.index;
+                        let bracketCount = 1;
+                        let endIndex = startIndex + 1;
+                        
+                        // Find the matching closing bracket
+                        for (let i = startIndex + 1; i < content.length; i++) {
+                            if (content[i] === '[') bracketCount++;
+                            if (content[i] === ']') bracketCount--;
+                            
+                            if (bracketCount === 0) {
+                                endIndex = i + 1;
+                                break;
+                            }
+                        }
+                        
+                        let jsonCandidate = content.substring(startIndex, endIndex);
+                        console.log('Extracted JSON candidate:', jsonCandidate);
+                        
+                        // Fix unterminated URLs in the extracted JSON
+                        jsonCandidate = fixUnterminatedUrls(jsonCandidate);
+                        
+                        try {
+                            allEvents = JSON.parse(jsonCandidate);
+                            displayEvents(allEvents);
+                        } catch (finalError) {
+                            console.error('Final JSON parsing attempt failed:', finalError);
+                            
+                            // Last resort: manually fix the JSON by removing problematic entries
+                            try {
+                                // Try to parse the JSON as an array of objects
+                                const eventsArray = extractValidEvents(jsonCandidate);
+                                if (eventsArray && eventsArray.length > 0) {
+                                    allEvents = eventsArray;
+                                    displayEvents(allEvents);
+                                } else {
+                                    throw new Error('Could not extract valid events');
+                                }
+                            } catch (lastError) {
+                                console.error('Last resort parsing failed:', lastError);
+                                eventsContainer.innerHTML = `
+                                    <div class="error-parsing">
+                                        <p>Could not parse events data. Please try again.</p>
+                                        <p>If this problem persists, try a different location or API.</p>
+                                    </div>`;
+                            }
+                        }
                     } else {
-                        // If JSON parsing fails, display the raw content
-                        eventsContainer.innerHTML = `<div class="error-parsing"><p>Could not parse events data. Please try again.</p></div>`;
+                        throw new Error('Could not find JSON array pattern');
                     }
                 } catch (extractError) {
                     console.error('Error extracting JSON:', extractError);
-                    eventsContainer.innerHTML = `<div class="error-parsing"><p>Could not parse events data. Please try again.</p></div>`;
+                    eventsContainer.innerHTML = `
+                        <div class="error-parsing">
+                            <p>Could not parse events data. Please try again.</p>
+                            <p>If this problem persists, try a different location or API.</p>
+                        </div>`;
                 }
             }
         } else {
@@ -167,6 +219,16 @@ function cleanJsonString(jsonString) {
     
     // Trim whitespace
     cleaned = cleaned.trim();
+    
+    // Replace invalid control characters
+    cleaned = cleaned.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+    
+    // Handle escaped characters that might be problematic
+    cleaned = cleaned.replace(/\\([^"\\\/bfnrtu])/g, '$1');
+    
+    // Fix unterminated strings by looking for URL patterns without closing quotes
+    const urlRegex = /"(https?:\/\/[^"]*?)(?=\s*[,}])/g;
+    cleaned = cleaned.replace(urlRegex, '"$1"');
     
     // If the string doesn't start with [ or {, try to find the start of the JSON
     if (!cleaned.startsWith('[') && !cleaned.startsWith('{')) {
@@ -192,7 +254,81 @@ function cleanJsonString(jsonString) {
         }
     }
     
-    return cleaned;
+    // Try to fix common JSON issues
+    try {
+        // Test if it's valid JSON already
+        JSON.parse(cleaned);
+        return cleaned;
+    } catch (e) {
+        console.log('Initial JSON parsing failed, attempting to fix:', e);
+        
+        try {
+            // Try to extract just the array part using regex
+            const jsonMatch = cleaned.match(/\[\s*\{.*\}\s*\]/s);
+            if (jsonMatch) {
+                let extracted = jsonMatch[0];
+                
+                // Fix unterminated URLs in the extracted JSON
+                extracted = fixUnterminatedUrls(extracted);
+                
+                return extracted;
+            }
+            
+            // If we can't extract an array, return the cleaned string anyway
+            // and let the caller handle the error
+            return cleaned;
+        } catch (extractError) {
+            console.error('Error extracting JSON:', extractError);
+            return cleaned;
+        }
+    }
+}
+
+// Helper function to fix unterminated URLs in JSON
+function fixUnterminatedUrls(jsonString) {
+    // Find all property definitions that look like URLs
+    const urlPropertyRegex = /"url"\s*:\s*"(https?:\/\/[^"]*?)(?=\s*[,}]|$)/g;
+    
+    // Replace with properly terminated URLs
+    return jsonString.replace(urlPropertyRegex, (match, url) => {
+        // If URL doesn't end with a quote, add one
+        return `"url": "${url}"`;
+    });
+}
+
+// Helper function to extract valid events from a malformed JSON string
+function extractValidEvents(jsonString) {
+    // Try to extract individual event objects
+    const eventRegex = /\{\s*"title"[^}]*\}/g;
+    const eventMatches = jsonString.match(eventRegex);
+    
+    if (!eventMatches) return [];
+    
+    const validEvents = [];
+    
+    for (const eventStr of eventMatches) {
+        try {
+            // Try to fix the event JSON
+            let fixedEventStr = eventStr;
+            
+            // Fix unterminated URLs
+            fixedEventStr = fixedEventStr.replace(/"url"\s*:\s*"([^"]*?)(?=\s*[,}]|$)/, '"url": "$1"');
+            
+            // Ensure the event object ends with a closing brace
+            if (!fixedEventStr.trim().endsWith('}')) {
+                fixedEventStr = fixedEventStr.trim() + '}';
+            }
+            
+            // Parse the event
+            const event = JSON.parse(fixedEventStr);
+            validEvents.push(event);
+        } catch (e) {
+            console.warn('Could not parse event:', eventStr, e);
+            // Skip this event and continue with others
+        }
+    }
+    
+    return validEvents;
 }
 
 // Display events
