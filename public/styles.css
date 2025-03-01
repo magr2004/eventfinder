@@ -314,8 +314,43 @@ header p {
 }
 
 .event-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+    border-color: var(--primary-color);
+}
+
+/* Add glow effect on hover */
+.event-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: var(--border-radius);
+    background: transparent;
+    transition: all 0.4s ease;
+    z-index: -1;
+    opacity: 0;
+}
+
+.event-card:hover::before {
+    top: -5px;
+    left: -5px;
+    right: -5px;
+    bottom: -5px;
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    opacity: 0.2;
+    filter: blur(10px);
+}
+
+/* Add subtle rotation on hover */
+.event-card:nth-child(odd):hover {
+    transform: translateY(-5px) scale(1.02) rotate(0.5deg);
+}
+
+.event-card:nth-child(even):hover {
+    transform: translateY(-5px) scale(1.02) rotate(-0.5deg);
 }
 
 .event-details {
@@ -323,6 +358,11 @@ header p {
     display: flex;
     flex-direction: column;
     height: 100%;
+    transition: all 0.3s ease;
+}
+
+.event-card:hover .event-details {
+    background-color: rgba(255, 255, 255, 0.8);
 }
 
 .event-title {
@@ -332,10 +372,29 @@ header p {
     color: var(--text-color);
     line-height: 1.4;
     transition: color 0.3s ease;
+    position: relative;
+    display: inline-block;
 }
 
 .event-card:hover .event-title {
     color: var(--primary-color);
+    transform: translateX(5px);
+}
+
+/* Add underline animation for title */
+.event-title::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background-color: var(--primary-color);
+    transition: width 0.3s ease;
+}
+
+.event-card:hover .event-title::after {
+    width: 100%;
 }
 
 .event-date, .event-location, .event-address, .event-category {
@@ -344,6 +403,15 @@ header p {
     margin-bottom: 8px;
     font-size: 0.9rem;
     color: var(--text-light);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.event-card:hover .event-date,
+.event-card:hover .event-location,
+.event-card:hover .event-address,
+.event-card:hover .event-category {
+    transform: translateX(3px);
+    color: var(--text-color);
 }
 
 .event-date i, .event-location i, .event-address i, .event-category i {
@@ -352,14 +420,15 @@ header p {
     font-size: 0.9rem;
     width: 16px;
     text-align: center;
-    transition: transform 0.3s ease;
+    transition: transform 0.3s ease, color 0.3s ease;
 }
 
 .event-card:hover .event-date i,
 .event-card:hover .event-location i,
 .event-card:hover .event-address i,
 .event-card:hover .event-category i {
-    transform: scale(1.2);
+    transform: scale(1.2) rotate(5deg);
+    color: var(--accent-color);
 }
 
 .event-description {
@@ -392,6 +461,7 @@ header p {
     position: relative;
     z-index: 1;
     overflow: hidden;
+    border: 1px solid transparent;
 }
 
 .event-link a::before {
@@ -411,10 +481,39 @@ header p {
 
 .event-link a:hover {
     color: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
 }
 
 .event-link a:hover::before {
     transform: scaleX(1);
+}
+
+.event-link a i {
+    margin-right: 5px;
+    transition: transform 0.3s ease;
+}
+
+.event-link a:hover i {
+    transform: translateX(3px);
+}
+
+/* Add pulse animation for the link on card hover */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.event-card:hover .event-link a {
+    animation: pulse 1.5s infinite;
+    border-color: var(--primary-color);
+}
+
+/* Stop the animation when hovering directly on the link */
+.event-card .event-link a:hover {
+    animation: none;
+    transform: translateY(-2px);
 }
 
 #error-message {
@@ -466,11 +565,45 @@ header p {
     margin-bottom: 5px;
     background-color: #f5f7fa;
     color: var(--text-color);
-    transition: transform 0.2s ease;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
 }
 
 .category-badge:hover {
+    transform: translateY(-3px) scale(1.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+}
+
+/* Add shine effect on hover */
+.category-badge::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.3) 50%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    transform: rotate(30deg);
+    transition: transform 0.7s ease;
+    opacity: 0;
+}
+
+.category-badge:hover::after {
+    transform: rotate(30deg) translate(50%, 50%);
+    opacity: 1;
+}
+
+/* Make category badges pop on card hover */
+.event-card:hover .category-badge {
     transform: translateY(-2px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
 }
 
 /* Category colors */
