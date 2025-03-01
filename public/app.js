@@ -17,6 +17,13 @@ dateFilter.addEventListener('change', filterEvents);
 radiusSelect.addEventListener('change', filterEvents);
 sortOrder.addEventListener('change', filterEvents);
 
+// Add event listener for Enter key on location input
+locationInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        searchEvents();
+    }
+});
+
 // Store all events to use for filtering
 let allEvents = [];
 
@@ -54,44 +61,36 @@ function validateInputs() {
 
 // Show error message
 function showError(message) {
-    errorMessage.innerHTML = `<p><i class="fas fa-exclamation-circle"></i> ${escapeHTML(message)}</p>`;
+    errorMessage.querySelector('p').innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
     errorMessage.classList.remove('hidden');
-    loadingElement.classList.add('hidden');
+    setTimeout(() => {
+        errorMessage.classList.add('hidden');
+    }, 5000);
 }
 
-// Escape HTML to prevent XSS
-function escapeHTML(str) {
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-// Function to search for events using our backend API
+// Search for events
 async function searchEvents() {
-    // Validate inputs before proceeding
+    // Hide any previous error messages
+    errorMessage.classList.add('hidden');
+    
+    // Validate inputs
     if (!validateInputs()) {
         return;
     }
     
-    const location = locationInput.value.trim();
-    const radius = parseInt(radiusSelect.value);
-    const category = categoryFilter.value;
-    const apiChoice = apiSelect.value;
-    const eventDate = dateFilter.value;
-
-    // Show loading spinner
-    loadingElement.classList.remove('hidden');
+    // Show loading indicator
     eventsContainer.innerHTML = '';
-    errorMessage.classList.add('hidden');
+    loadingElement.classList.remove('hidden');
+    
+    // Get search parameters
+    const location = locationInput.value.trim();
+    const radius = radiusSelect.value;
+    const category = categoryFilter.value;
+    const eventDate = dateFilter.value;
+    const apiChoice = apiSelect.value;
     
     try {
-        // Add a timeout to the fetch request
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-        
+        // Make API request
         const response = await fetch('/api/events', {
             method: 'POST',
             headers: {
@@ -101,529 +100,316 @@ async function searchEvents() {
                 location,
                 radius,
                 category,
-                apiChoice,
-                eventDate
-            }),
-            signal: controller.signal
+                eventDate,
+                apiChoice
+            })
         });
         
-        clearTimeout(timeoutId); // Clear the timeout if the request completes
+        // Hide loading indicator
+        loadingElement.classList.add('hidden');
         
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to fetch events');
+            showError(errorData.error || 'Failed to fetch events. Please try again.');
+            return;
         }
         
         const data = await response.json();
         
-        // Validate the response structure
-        if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
-            throw new Error('Invalid response format from server');
-        }
-        
-        const eventsText = data.choices[0].message.content;
-        
-        // Parse the events from the JSON response
-        allEvents = parseEventsFromJSON(eventsText);
-        
-        if (allEvents.length === 0) {
-            showError('No events found. Please try a different location or filters.');
-        } else {
-            displayEvents(allEvents);
-        }
-    } catch (error) {
-        console.error('Error fetching events:', error);
-        
-        if (error.name === 'AbortError') {
-            showError('Request timed out. Please try again later.');
-        } else {
-            showError(error.message || 'Failed to fetch events. Please try again later.');
-        }
-    } finally {
-        loadingElement.classList.add('hidden');
-    }
-}
-
-// Function to parse events from JSON response with additional security
-function parseEventsFromJSON(eventsText) {
-    try {
-        // Only log in development mode
-        const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        
-        // Clean the text to ensure it's valid JSON
-        let cleanedText = eventsText.trim();
-        // Remove any markdown code block markers if present
-        cleanedText = cleanedText.replace(/```json\s*|\s*```/g, '');
-        
-        // Try to find a JSON array in the text if it's not already valid JSON
-        if (!cleanedText.startsWith('[') && !cleanedText.startsWith('{')) {
-            const jsonMatch = cleanedText.match(/\[\s*\{.*\}\s*\]/s);
-            if (jsonMatch) {
-                cleanedText = jsonMatch[0];
-            }
-        }
-        
-        if (isDev) console.log("Cleaned text length:", cleanedText.length);
-        
-        // Parse the JSON
-        let eventsData;
-        try {
-            eventsData = JSON.parse(cleanedText);
-        } catch (parseError) {
-            if (isDev) console.error("JSON parse error:", parseError);
-            // Try to extract JSON from text if it's embedded in other content
-            const jsonMatch = cleanedText.match(/\[.*\]/s);
-            if (jsonMatch) {
-                try {
-                    eventsData = JSON.parse(jsonMatch[0]);
-                } catch (e) {
-                    if (isDev) console.error("Failed to extract JSON:", e);
-                    return [];
-                }
-            } else {
-                return [];
-            }
-        }
-        
-        // Validate that eventsData is an array
-        if (!Array.isArray(eventsData)) {
-            if (isDev) console.error('Events data is not an array:', typeof eventsData);
-            // If it's an object with an events property that is an array, use that
-            if (eventsData && Array.isArray(eventsData.events)) {
-                eventsData = eventsData.events;
-            } else {
-                return [];
-            }
-        }
-        
-        // Get current date for filtering past events
-        const currentDate = new Date();
-        currentDate.setHours(0, 0, 0, 0); // Set to beginning of day for accurate comparison
-        
-        // Process each event with sanitization and filter out past events
-        const processedEvents = eventsData
-            .map(event => {
-                // Ensure all properties exist and are strings
-                const sanitizedEvent = {
-                    title: typeof event.title === 'string' ? escapeHTML(event.title) : 'No Title',
-                    date: typeof event.date === 'string' ? escapeHTML(event.date) : 'Date not specified',
-                    location: typeof event.location === 'string' ? escapeHTML(event.location) : 'Location not specified',
-                    address: typeof event.address === 'string' ? escapeHTML(event.address) : 'Address not specified',
-                    category: typeof event.category === 'string' ? escapeHTML(event.category) : 'Other',
-                    description: typeof event.description === 'string' ? escapeHTML(event.description) : 'No description available',
-                    url: typeof event.url === 'string' ? event.url : '#'
-                };
-                
-                // Try to parse the event date
-                sanitizedEvent.parsedDate = parseEventDate(sanitizedEvent.date);
-                
-                // Validate URL
-                if (sanitizedEvent.url !== '#') {
-                    try {
-                        const url = new URL(sanitizedEvent.url);
-                        // Only allow http and https protocols
-                        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-                            sanitizedEvent.url = '#';
-                        }
-                    } catch (e) {
-                        // If URL is invalid, set to '#'
-                        sanitizedEvent.url = '#';
-                    }
-                }
-                
-                return sanitizedEvent;
-            })
-            .filter(event => {
-                // Filter out events with dates in the past
-                if (event.parsedDate) {
-                    return event.parsedDate >= currentDate;
-                }
-                // If we couldn't parse the date, include the event (benefit of doubt)
-                return true;
-            });
-        
-        if (isDev) console.log(`Processed ${eventsData.length} events, returning ${processedEvents.length} events`);
-        return processedEvents;
-    } catch (error) {
-        console.error('Error parsing events JSON:', error);
-        return [];
-    }
-}
-
-// Helper function to parse event dates in various formats
-function parseEventDate(dateString) {
-    if (!dateString) return null;
-    
-    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    
-    // Try to handle various date formats
-    
-    // Case 1: Standard date format (Month Day, Year)
-    try {
-        const date = new Date(dateString);
-        if (!isNaN(date.getTime())) {
-            return date;
-        }
-    } catch (e) {
-        // Continue to other formats if this fails
-    }
-    
-    // Case 2: Check for "Today", "Tomorrow", etc.
-    const lowerDateString = dateString.toLowerCase();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (lowerDateString.includes('today')) {
-        return today;
-    }
-    
-    if (lowerDateString.includes('tomorrow')) {
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        return tomorrow;
-    }
-    
-    if (lowerDateString.includes('this weekend')) {
-        // Find the next Saturday
-        const nextSaturday = new Date(today);
-        const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-        const daysUntilSaturday = dayOfWeek === 6 ? 0 : 6 - dayOfWeek;
-        nextSaturday.setDate(today.getDate() + daysUntilSaturday);
-        return nextSaturday;
-    }
-    
-    // Case 3: Try to extract date parts using regex
-    // Match patterns like "June 15, 2023" or "6/15/2023" or "2023-06-15"
-    const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 
-                        'july', 'august', 'september', 'october', 'november', 'december'];
-    
-    // Check for month name in the string
-    for (let i = 0; i < monthNames.length; i++) {
-        if (lowerDateString.includes(monthNames[i])) {
-            // Extract day and year using regex
-            const dayMatch = lowerDateString.match(/\b(\d{1,2})(st|nd|rd|th)?\b/);
-            const yearMatch = lowerDateString.match(/\b(20\d{2})\b/);
+        // Process the response
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const content = data.choices[0].message.content;
             
-            if (dayMatch) {
-                const day = parseInt(dayMatch[1]);
-                const month = i;
-                const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+            try {
+                // Clean the JSON string before parsing
+                const cleanedContent = cleanJsonString(content);
                 
-                const eventDate = new Date(year, month, day);
-                if (!isNaN(eventDate.getTime())) {
-                    return eventDate;
+                // Try to parse the content as JSON
+                allEvents = JSON.parse(cleanedContent);
+                
+                // Display events
+                displayEvents(allEvents);
+            } catch (parseError) {
+                console.error('Error parsing JSON:', parseError);
+                console.log('Raw content:', content);
+                
+                // Try to extract JSON from the content if it contains markdown or other formatting
+                try {
+                    const jsonMatch = content.match(/\[\s*\{.*\}\s*\]/s);
+                    if (jsonMatch) {
+                        allEvents = JSON.parse(jsonMatch[0]);
+                        displayEvents(allEvents);
+                    } else {
+                        // If JSON parsing fails, display the raw content
+                        eventsContainer.innerHTML = `<div class="error-parsing"><p>Could not parse events data. Please try again.</p></div>`;
+                    }
+                } catch (extractError) {
+                    console.error('Error extracting JSON:', extractError);
+                    eventsContainer.innerHTML = `<div class="error-parsing"><p>Could not parse events data. Please try again.</p></div>`;
                 }
             }
+        } else {
+            showError('Invalid response format from the API');
         }
+    } catch (error) {
+        console.error('Error:', error);
+        loadingElement.classList.add('hidden');
+        showError('An error occurred while fetching events. Please try again.');
     }
-    
-    // Case 4: Check for MM/DD/YYYY format
-    const dateRegex = /(\d{1,2})\/(\d{1,2})\/(\d{4})/;
-    const dateMatch = lowerDateString.match(dateRegex);
-    if (dateMatch) {
-        const month = parseInt(dateMatch[1]) - 1; // JS months are 0-based
-        const day = parseInt(dateMatch[2]);
-        const year = parseInt(dateMatch[3]);
-        
-        const eventDate = new Date(year, month, day);
-        if (!isNaN(eventDate.getTime())) {
-            return eventDate;
-        }
-    }
-    
-    // Case 5: Check for YYYY-MM-DD format
-    const isoDateRegex = /(\d{4})-(\d{1,2})-(\d{1,2})/;
-    const isoMatch = lowerDateString.match(isoDateRegex);
-    if (isoMatch) {
-        const year = parseInt(isoMatch[1]);
-        const month = parseInt(isoMatch[2]) - 1; // JS months are 0-based
-        const day = parseInt(isoMatch[3]);
-        
-        const eventDate = new Date(year, month, day);
-        if (!isNaN(eventDate.getTime())) {
-            return eventDate;
-        }
-    }
-    
-    // Case 6: Check for relative time periods
-    if (lowerDateString.includes('next week')) {
-        const nextWeek = new Date(today);
-        nextWeek.setDate(today.getDate() + 7);
-        return nextWeek;
-    }
-    
-    if (lowerDateString.includes('this month')) {
-        // Return the current date as we're already in this month
-        return today;
-    }
-    
-    // If all parsing attempts fail, return null
-    return null;
 }
 
-// Function to display events
+// Helper function to clean JSON string from markdown formatting
+function cleanJsonString(jsonString) {
+    if (!jsonString) return '';
+    
+    // Remove markdown code blocks
+    let cleaned = jsonString.replace(/```json\s*|\s*```/g, '');
+    
+    // Trim whitespace
+    cleaned = cleaned.trim();
+    
+    // If the string doesn't start with [ or {, try to find the start of the JSON
+    if (!cleaned.startsWith('[') && !cleaned.startsWith('{')) {
+        const startBracket = cleaned.indexOf('[');
+        const startBrace = cleaned.indexOf('{');
+        
+        if (startBracket !== -1 && (startBrace === -1 || startBracket < startBrace)) {
+            cleaned = cleaned.substring(startBracket);
+        } else if (startBrace !== -1) {
+            cleaned = cleaned.substring(startBrace);
+        }
+    }
+    
+    // If the string doesn't end with ] or }, try to find the end of the JSON
+    if (!cleaned.endsWith(']') && !cleaned.endsWith('}')) {
+        const endBracket = cleaned.lastIndexOf(']');
+        const endBrace = cleaned.lastIndexOf('}');
+        
+        if (endBracket !== -1 && (endBrace === -1 || endBracket > endBrace)) {
+            cleaned = cleaned.substring(0, endBracket + 1);
+        } else if (endBrace !== -1) {
+            cleaned = cleaned.substring(0, endBrace + 1);
+        }
+    }
+    
+    return cleaned;
+}
+
+// Display events
 function displayEvents(events) {
+    // Clear previous events
     eventsContainer.innerHTML = '';
     
+    // Check if events array is empty
     if (!events || events.length === 0) {
-        showError('No events found. Please try a different location or filters.');
+        showError('No events found. Try a different location or filters.');
         return;
     }
     
-    console.log(`Displaying ${events.length} events`);
+    // Apply current filter
+    const filteredEvents = filterEventsByCategory(events, categoryFilter.value);
+    const dateFilteredEvents = filterEventsByDate(filteredEvents, dateFilter.value);
     
-    // Create a document fragment to improve performance
-    const fragment = document.createDocumentFragment();
+    // Sort events based on user preference
+    const sortedEvents = sortEvents(dateFilteredEvents, sortOrder.value);
     
-    // Limit the number of events to display at once to improve performance
-    const maxEventsToDisplay = 50;
-    const eventsToDisplay = events.slice(0, maxEventsToDisplay);
-    
-    // Add a message if we're limiting the display
-    if (events.length > maxEventsToDisplay) {
-        const limitMessage = document.createElement('div');
-        limitMessage.className = 'limit-message';
-        limitMessage.innerHTML = `<p>Showing ${maxEventsToDisplay} of ${events.length} events. Use filters to narrow results.</p>`;
-        fragment.appendChild(limitMessage);
-    }
-    
-    eventsToDisplay.forEach(event => {
+    // Display each event
+    sortedEvents.forEach((event, index) => {
+        // Create event card with animation delay
         const eventCard = document.createElement('div');
         eventCard.className = 'event-card';
-        eventCard.dataset.category = event.category.toLowerCase();
+        eventCard.style.animationDelay = `${index * 0.05}s`;
         
-        // Create the link element with rel="noopener noreferrer" for security
-        const linkHtml = event.url && event.url !== '#' 
-            ? `<div class="event-link"><a href="${event.url}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i> Event Details</a></div>`
-            : '';
-        
-        // Format the date nicely if possible
-        let formattedDate = event.date;
-        try {
-            if (event.parsedDate) {
-                formattedDate = event.parsedDate.toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                });
-            } else if (event.date.match(/\d{4}-\d{2}-\d{2}/)) {
-                const dateObj = new Date(event.date);
-                formattedDate = dateObj.toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                });
+        // Format date if available
+        let formattedDate = 'Date not specified';
+        if (event.date) {
+            try {
+                const eventDate = new Date(event.date);
+                if (!isNaN(eventDate.getTime())) {
+                    formattedDate = eventDate.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    });
+                    
+                    // Add time if available
+                    if (event.time) {
+                        formattedDate += ` at ${event.time}`;
+                    }
+                }
+            } catch (e) {
+                console.warn('Error formatting date:', e);
             }
-        } catch (e) {
-            console.error("Error formatting date:", e);
-            // Keep original date format if parsing fails
         }
         
-        // Create a category badge
-        const categoryClass = getCategoryClass(event.category.toLowerCase());
-        const categoryBadge = `<span class="category-badge ${categoryClass}">${event.category}</span>`;
+        // Create category badge if available
+        let categoryBadge = '';
+        if (event.category) {
+            const categoryClass = `cat-${event.category.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+            categoryBadge = `<span class="category-badge ${categoryClass}">${event.category}</span>`;
+        }
         
-        // Use innerHTML with pre-sanitized content
+        // Build event card HTML
         eventCard.innerHTML = `
             <div class="event-details">
-                ${categoryBadge}
-                <h3 class="event-title">${event.title}</h3>
-                <div class="event-meta">
-                    <div class="event-date"><i class="far fa-calendar-alt"></i> ${formattedDate}</div>
-                    <div class="event-location"><i class="fas fa-map-marker-alt"></i> ${event.location}</div>
-                    <div class="event-address"><i class="fas fa-home"></i> ${event.address}</div>
+                <h2 class="event-title">${event.title || event.name || 'Unnamed Event'}</h2>
+                
+                <div class="event-date">
+                    <i class="far fa-calendar-alt"></i>
+                    ${formattedDate}
                 </div>
-                <p class="event-description">${event.description}</p>
-                ${linkHtml}
+                
+                <div class="event-location">
+                    <i class="fas fa-map-marker-alt"></i>
+                    ${event.location || event.venue || 'Location not specified'}
+                </div>
+                
+                ${event.address ? `
+                <div class="event-address">
+                    <i class="fas fa-location-dot"></i>
+                    ${event.address}
+                </div>` : ''}
+                
+                ${event.category ? `
+                <div class="event-category">
+                    <i class="fas fa-tag"></i>
+                    ${categoryBadge}
+                </div>` : ''}
+                
+                <p class="event-description">${event.description || 'No description available'}</p>
+                
+                ${event.url ? `
+                <div class="event-link">
+                    <a href="${event.url}" target="_blank" rel="noopener noreferrer">
+                        <i class="fas fa-external-link-alt"></i> More Info
+                    </a>
+                </div>` : ''}
             </div>
         `;
         
-        fragment.appendChild(eventCard);
+        eventsContainer.appendChild(eventCard);
     });
     
-    // Append all events at once for better performance
-    eventsContainer.appendChild(fragment);
+    // Show message if no events match the filters
+    if (sortedEvents.length === 0) {
+        showError('No events match your filters. Try different filter options.');
+    }
 }
 
-// Helper function to get category class for styling
-function getCategoryClass(category) {
-    const categoryMap = {
-        'music': 'cat-music',
-        'sports': 'cat-sports',
-        'arts': 'cat-arts',
-        'culture': 'cat-arts',
-        'food': 'cat-food',
-        'drink': 'cat-food',
-        'outdoor': 'cat-outdoor',
-        'family': 'cat-family',
-        'kids': 'cat-family',
-        'comedy': 'cat-comedy',
-        'theater': 'cat-theater',
-        'shows': 'cat-theater',
-        'festivals': 'cat-festivals',
-        'nightlife': 'cat-nightlife',
-        'business': 'cat-business',
-        'networking': 'cat-business',
-        'education': 'cat-education',
-        'learning': 'cat-education',
-        'charity': 'cat-charity',
-        'causes': 'cat-charity',
-        'health': 'cat-health',
-        'wellness': 'cat-health',
-        'tech': 'cat-tech',
-        'technology': 'cat-tech'
-    };
+// Filter events by category
+function filterEventsByCategory(events, category) {
+    if (!category || category === 'all') {
+        return events;
+    }
     
-    // Check if the category contains any of our mapped keywords
-    for (const [key, value] of Object.entries(categoryMap)) {
-        if (category.includes(key)) {
-            return value;
+    return events.filter(event => {
+        if (!event.category) return false;
+        return event.category.toLowerCase().includes(category.toLowerCase());
+    });
+}
+
+// Filter events by date
+function filterEventsByDate(events, dateFilter) {
+    if (!dateFilter || dateFilter === 'all') {
+        return events;
+    }
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const nextWeekStart = new Date(today);
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+    
+    const nextWeekEnd = new Date(nextWeekStart);
+    nextWeekEnd.setDate(nextWeekEnd.getDate() + 7);
+    
+    const thisWeekendStart = new Date(today);
+    const dayOfWeek = today.getDay();
+    const daysUntilWeekend = dayOfWeek === 6 ? 0 : 5 - dayOfWeek;
+    thisWeekendStart.setDate(thisWeekendStart.getDate() + daysUntilWeekend);
+    
+    const thisWeekendEnd = new Date(thisWeekendStart);
+    thisWeekendEnd.setDate(thisWeekendEnd.getDate() + 2);
+    
+    const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    
+    return events.filter(event => {
+        if (!event.date) return true;
+        
+        try {
+            const eventDate = new Date(event.date);
+            if (isNaN(eventDate.getTime())) return true;
+            
+            switch (dateFilter) {
+                case 'today':
+                    return eventDate.toDateString() === today.toDateString();
+                case 'tomorrow':
+                    return eventDate.toDateString() === tomorrow.toDateString();
+                case 'this weekend':
+                    return eventDate >= thisWeekendStart && eventDate <= thisWeekendEnd;
+                case 'next week':
+                    return eventDate >= nextWeekStart && eventDate <= nextWeekEnd;
+                case 'this month':
+                    return eventDate <= thisMonthEnd;
+                default:
+                    return true;
+            }
+        } catch (e) {
+            console.warn('Error filtering by date:', e);
+            return true;
         }
-    }
-    
-    // Default category class
-    return 'cat-other';
+    });
 }
 
-// Function to filter events
+// Sort events by date
+function sortEvents(events, sortOrder) {
+    return [...events].sort((a, b) => {
+        const dateA = a.date ? new Date(a.date) : new Date(0);
+        const dateB = b.date ? new Date(b.date) : new Date(0);
+        
+        if (isNaN(dateA.getTime())) return 1;
+        if (isNaN(dateB.getTime())) return -1;
+        
+        return sortOrder === 'recent' ? dateA - dateB : dateB - dateA;
+    });
+}
+
+// Filter events based on current filter selections
 function filterEvents() {
-    const category = categoryFilter.value;
-    const dateFilter = document.getElementById('date-filter').value;
-    const sort = sortOrder.value;
+    if (allEvents.length === 0) return;
     
-    let filteredEvents = [...allEvents];
+    const filteredEvents = filterEventsByCategory(allEvents, categoryFilter.value);
+    const dateFilteredEvents = filterEventsByDate(filteredEvents, dateFilter.value);
+    const sortedEvents = sortEvents(dateFilteredEvents, sortOrder.value);
     
-    // Filter by category
-    if (category !== 'all') {
-        filteredEvents = filteredEvents.filter(event => {
-            const eventCategory = event.category.toLowerCase();
-            
-            // Handle some common category variations
-            if (category === 'arts' && (eventCategory.includes('art') || eventCategory.includes('culture') || eventCategory.includes('museum'))) {
-                return true;
-            }
-            if (category === 'food' && (eventCategory.includes('food') || eventCategory.includes('drink') || eventCategory.includes('dining') || eventCategory.includes('culinary'))) {
-                return true;
-            }
-            if (category === 'family' && (eventCategory.includes('family') || eventCategory.includes('kid') || eventCategory.includes('children'))) {
-                return true;
-            }
-            if (category === 'business' && (eventCategory.includes('business') || eventCategory.includes('network') || eventCategory.includes('professional'))) {
-                return true;
-            }
-            
-            return eventCategory.includes(category);
-        });
-    }
-    
-    // Filter by date
-    if (dateFilter !== 'all') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        
-        // Find the next weekend (Saturday and Sunday)
-        const nextSaturday = new Date(today);
-        const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-        const daysUntilSaturday = dayOfWeek === 6 ? 0 : 6 - dayOfWeek;
-        nextSaturday.setDate(today.getDate() + daysUntilSaturday);
-        
-        const nextSunday = new Date(nextSaturday);
-        nextSunday.setDate(nextSaturday.getDate() + 1);
-        
-        // Next week starts on Monday
-        const nextMonday = new Date(today);
-        const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-        nextMonday.setDate(today.getDate() + daysUntilMonday);
-        
-        const nextSunday2 = new Date(nextMonday);
-        nextSunday2.setDate(nextMonday.getDate() + 6);
-        
-        filteredEvents = filteredEvents.filter(event => {
-            // If we have a parsed date, use it for accurate filtering
-            if (event.parsedDate) {
-                switch (dateFilter) {
-                    case 'today':
-                        return isSameDay(event.parsedDate, today);
-                    case 'tomorrow':
-                        return isSameDay(event.parsedDate, tomorrow);
-                    case 'this weekend':
-                        return (isSameDay(event.parsedDate, nextSaturday) || 
-                                isSameDay(event.parsedDate, nextSunday));
-                    case 'next week':
-                        return (event.parsedDate >= nextMonday && 
-                                event.parsedDate <= nextSunday2);
-                    case 'this month':
-                        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                        return (event.parsedDate >= today && 
-                                event.parsedDate <= endOfMonth);
-                    default:
-                        return true;
-                }
-            } else {
-                // Fallback to text-based filtering if we don't have a parsed date
-                const eventDateText = event.date.toLowerCase();
-                
-                switch (dateFilter) {
-                    case 'today':
-                        return eventDateText.includes('today');
-                    case 'tomorrow':
-                        return eventDateText.includes('tomorrow');
-                    case 'this weekend':
-                        return eventDateText.includes('weekend') || 
-                               eventDateText.includes('saturday') || 
-                               eventDateText.includes('sunday');
-                    case 'next week':
-                        return eventDateText.includes('next week');
-                    case 'this month':
-                        return true; // All events are within this month
-                    default:
-                        return true;
-                }
-            }
-        });
-    }
-    
-    // Sort events by date
-    if (filteredEvents.length > 0) {
-        filteredEvents.sort((a, b) => {
-            // If we have parsed dates, use them for sorting
-            if (a.parsedDate && b.parsedDate) {
-                return sort === 'recent' 
-                    ? a.parsedDate - b.parsedDate 
-                    : b.parsedDate - a.parsedDate;
-            }
-            // Fallback to string comparison if dates couldn't be parsed
-            return 0;
-        });
-    }
-    
-    displayEvents(filteredEvents);
+    displayEvents(sortedEvents);
 }
 
-// Helper function to check if two dates are the same day
-function isSameDay(date1, date2) {
-    return date1.getFullYear() === date2.getFullYear() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getDate() === date2.getDate();
+// Add animation to event cards when they appear
+function addScrollAnimation() {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1 });
+    
+    document.querySelectorAll('.event-card').forEach(card => {
+        observer.observe(card);
+    });
 }
 
-// Function to get a random event image (not used anymore but kept for compatibility)
-function getRandomEventImage() {
-    const images = [
-        'https://images.unsplash.com/photo-1540575467063-178a50c2df87?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1414525253161-7a46d19cd819?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1504674900247-0877df9cc836?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1533659124865-d6072dc035e1?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80'
-    ];
+// Initialize the page
+document.addEventListener('DOMContentLoaded', () => {
+    // Focus on location input
+    locationInput.focus();
     
-    return images[Math.floor(Math.random() * images.length)];
-} 
+    // Add animation to event cards
+    addScrollAnimation();
+}); 
